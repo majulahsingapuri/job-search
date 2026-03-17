@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  job-agent:
+    build: .
+    container_name: job-agent
+    env_file: .env
+    volumes:
+      - ./db:/app/db          # SQLite persistence
+      - ./logs:/app/logs      # Log persistence
+      - ./config:/app/config  # Resume variants + search config
+    restart: unless-stopped
+    # Keeps container alive; CRON runs inside via schedule library
+    command: python main.py
