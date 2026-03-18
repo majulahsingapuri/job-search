@@ -46,13 +46,15 @@ Skills: PyTorch, TensorFlow, HuggingFace Transformers, LangChain, TransformerLen
         AWS, GCP, Azure, Python, Git, Linux
 """.strip()
 
-RESUME_SUMMARY = "\n\n".join([
-    f"VARIANT: {k}\n"
-    f"Label: {v['label']}\n"
-    f"Best for: {', '.join(v['target_roles'])}\n"
-    f"Summary: {v['summary']}"
-    for k, v in RESUME_VARIANTS.items()
-])
+RESUME_SUMMARY = "\n\n".join(
+    [
+        f"VARIANT: {k}\n"
+        f"Label: {v['label']}\n"
+        f"Best for: {', '.join(v['target_roles'])}\n"
+        f"Summary: {v['summary']}"
+        for k, v in RESUME_VARIANTS.items()
+    ]
+)
 
 SYSTEM_PROMPT = f"""You are a career advisor helping Bhargav Singapuri, an AI/ML grad student
 at Northeastern University, identify and apply to Summer 2026 internships.
@@ -128,8 +130,10 @@ async def score_job_async(job: dict) -> tuple[dict, dict | None]:
                         "cache_control": {"type": "ephemeral"},
                     }
                 ],
-                messages=[{"role": "user", "content": f"Analyse this job:\n\n{job_text}"}],
-            )
+                messages=[
+                    {"role": "user", "content": f"Analyse this job:\n\n{job_text}"}
+                ],
+            ),
         )
 
         raw = response.content[0].text.strip()
@@ -145,8 +149,12 @@ async def score_job_async(job: dict) -> tuple[dict, dict | None]:
 
         # Validate required keys
         required = {
-            "fit_score", "fit_reasoning", "resume_variant",
-            "resume_reasoning", "outreach_draft", "linkedin_search_queries",
+            "fit_score",
+            "fit_reasoning",
+            "resume_variant",
+            "resume_reasoning",
+            "outreach_draft",
+            "linkedin_search_queries",
         }
         missing = required - result.keys()
         if missing:
@@ -158,8 +166,12 @@ async def score_job_async(job: dict) -> tuple[dict, dict | None]:
         return job, result
 
     except json.JSONDecodeError as e:
-        console.log(f"  [red]JSON parse error — {job['title']} @ {job['company']}: {e}[/red]")
+        console.log(
+            f"  [red]JSON parse error — {job['title']} @ {job['company']}: {e}[/red]"
+        )
         return job, None
     except Exception as e:
-        console.log(f"  [red]Agent error — {job['title']} @ {job['company']}: {e}[/red]")
+        console.log(
+            f"  [red]Agent error — {job['title']} @ {job['company']}: {e}[/red]"
+        )
         return job, None

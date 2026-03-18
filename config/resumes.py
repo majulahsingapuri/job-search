@@ -4,10 +4,9 @@
 # Update the `summary` and `highlights` fields as you refine each variant.
 
 RESUME_VARIANTS = {
-
     "ml_engineer": {
         "label": "ML Engineer",
-        "file": "Bhargav_Resume_MLEng.pdf",   # filename you'll use when applying
+        "file": "Bhargav_Resume_MLEng.pdf",  # filename you'll use when applying
         "target_roles": ["ML Engineer", "AI Engineer", "MLOps Engineer", "Applied ML"],
         "summary": (
             "Production-focused ML/AI engineer with experience deploying LLM-powered systems, "
@@ -24,16 +23,33 @@ RESUME_VARIANTS = {
             "Docker, CI/CD, REST APIs, Terraform, Airflow",
         ],
         "keywords": [
-            "mlops", "deployment", "api", "backend", "docker", "production",
-            "infrastructure", "pipeline", "langsmith", "monitoring", "flask",
-            "engineer", "software", "system design", "ci/cd", "cloud"
+            "mlops",
+            "deployment",
+            "api",
+            "backend",
+            "docker",
+            "production",
+            "infrastructure",
+            "pipeline",
+            "langsmith",
+            "monitoring",
+            "flask",
+            "engineer",
+            "software",
+            "system design",
+            "ci/cd",
+            "cloud",
         ],
     },
-
     "data_scientist": {
         "label": "Data Scientist",
         "file": "Bhargav_Resume_DS.pdf",
-        "target_roles": ["Data Scientist", "Applied Scientist", "Quantitative Analyst", "Analytics Engineer"],
+        "target_roles": [
+            "Data Scientist",
+            "Applied Scientist",
+            "Quantitative Analyst",
+            "Analytics Engineer",
+        ],
         "summary": (
             "Data scientist with production experience building analytics dashboards, ETL pipelines, "
             "and ML models across finance and healthcare. Built Splunk dashboard processing 10M+ daily API records "
@@ -49,16 +65,33 @@ RESUME_VARIANTS = {
             "SQL (PostgreSQL, Snowflake), Pandas, Tableau, PowerQuery",
         ],
         "keywords": [
-            "data scientist", "analytics", "sql", "statistical", "modelling",
-            "tableau", "snowflake", "etl", "visualization", "business intelligence",
-            "experiment", "a/b test", "forecasting", "insight", "reporting", "analyst"
+            "data scientist",
+            "analytics",
+            "sql",
+            "statistical",
+            "modelling",
+            "tableau",
+            "snowflake",
+            "etl",
+            "visualization",
+            "business intelligence",
+            "experiment",
+            "a/b test",
+            "forecasting",
+            "insight",
+            "reporting",
+            "analyst",
         ],
     },
-
     "ai_researcher": {
         "label": "AI Researcher",
         "file": "Bhargav_Resume_Research.pdf",
-        "target_roles": ["AI Research Intern", "ML Research Intern", "Research Engineer", "Research Scientist"],
+        "target_roles": [
+            "AI Research Intern",
+            "ML Research Intern",
+            "Research Engineer",
+            "Research Scientist",
+        ],
         "summary": (
             "AI/ML researcher focused on model interpretability and LLM safety. Currently investigating "
             "transliteration as a jailbreak attack vector on Gemma 3 models and building mitigations via "
@@ -74,10 +107,28 @@ RESUME_VARIANTS = {
             "MS AI @ Northeastern; BS DSAI @ NTU Singapore",
         ],
         "keywords": [
-            "research", "researcher", "interpretability", "alignment", "safety",
-            "mechanistic", "llm", "transformer", "attention", "representation",
-            "probe", "sae", "sparse autoencoder", "novel", "paper", "publication",
-            "phd", "lab", "academic", "science", "theory", "benchmark"
+            "research",
+            "researcher",
+            "interpretability",
+            "alignment",
+            "safety",
+            "mechanistic",
+            "llm",
+            "transformer",
+            "attention",
+            "representation",
+            "probe",
+            "sae",
+            "sparse autoencoder",
+            "novel",
+            "paper",
+            "publication",
+            "phd",
+            "lab",
+            "academic",
+            "science",
+            "theory",
+            "benchmark",
         ],
     },
 }

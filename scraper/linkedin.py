@@ -15,15 +15,17 @@ console = Console()
 
 LINKEDIN_BASE = "https://www.linkedin.com/jobs/search"
 
+
 # Maps our keyword to LinkedIn's URL-encoded equivalent
 def build_linkedin_url(keyword: str, location: str) -> str:
     import urllib.parse
+
     params = {
         "keywords": keyword,
         "location": location,
-        "f_TPR": "r86400",   # Posted in last 24 hours
-        "f_JT": "I",         # Internship — change to "F" for full-time or remove
-        "sortBy": "DD",      # Most recent first
+        "f_TPR": "r86400",  # Posted in last 24 hours
+        "f_JT": "I",  # Internship — change to "F" for full-time or remove
+        "sortBy": "DD",  # Most recent first
     }
     return f"{LINKEDIN_BASE}?{urllib.parse.urlencode(params)}"
 
@@ -37,8 +39,7 @@ async def scrape_linkedin(keywords: list[str], location: str) -> list[dict]:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
+            headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
         context = await browser.new_context(
             user_agent=(
@@ -67,28 +68,46 @@ async def scrape_linkedin(keywords: list[str], location: str) -> list[dict]:
 
                 for card in cards:
                     try:
-                        title_el = await card.query_selector("h3.base-search-card__title")
-                        company_el = await card.query_selector("h4.base-search-card__subtitle")
-                        location_el = await card.query_selector("span.job-search-card__location")
+                        title_el = await card.query_selector(
+                            "h3.base-search-card__title"
+                        )
+                        company_el = await card.query_selector(
+                            "h4.base-search-card__subtitle"
+                        )
+                        location_el = await card.query_selector(
+                            "span.job-search-card__location"
+                        )
                         link_el = await card.query_selector("a.base-card__full-link")
 
-                        title = (await title_el.inner_text()).strip() if title_el else ""
-                        company = (await company_el.inner_text()).strip() if company_el else ""
-                        loc = (await location_el.inner_text()).strip() if location_el else ""
+                        title = (
+                            (await title_el.inner_text()).strip() if title_el else ""
+                        )
+                        company = (
+                            (await company_el.inner_text()).strip()
+                            if company_el
+                            else ""
+                        )
+                        loc = (
+                            (await location_el.inner_text()).strip()
+                            if location_el
+                            else ""
+                        )
                         job_url = await link_el.get_attribute("href") if link_el else ""
 
                         # Clean tracking params from URL
                         job_url = job_url.split("?")[0] if job_url else ""
 
                         if title and company:
-                            jobs.append({
-                                "title": title,
-                                "company": company,
-                                "location": loc,
-                                "url": job_url,
-                                "source": "linkedin",
-                                "description": "",  # Fetched lazily in enrichment step
-                            })
+                            jobs.append(
+                                {
+                                    "title": title,
+                                    "company": company,
+                                    "location": loc,
+                                    "url": job_url,
+                                    "source": "linkedin",
+                                    "description": "",  # Fetched lazily in enrichment step
+                                }
+                            )
                     except Exception as e:
                         console.log(f"  [yellow]Card parse error: {e}[/yellow]")
                         continue
@@ -117,8 +136,7 @@ async def enrich_job_description(job: dict) -> dict:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
+            headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
         context = await browser.new_context()
         page = await context.new_page()
@@ -129,9 +147,13 @@ async def enrich_job_description(job: dict) -> dict:
 
             desc_el = await page.query_selector("div.show-more-less-html__markup")
             if desc_el:
-                job["description"] = (await desc_el.inner_text()).strip()[:3000]  # Cap at 3k chars
+                job["description"] = (await desc_el.inner_text()).strip()[
+                    :3000
+                ]  # Cap at 3k chars
         except Exception as e:
-            console.log(f"  [yellow]Could not enrich description for {job['title']} @ {job['company']}: {e}[/yellow]")
+            console.log(
+                f"  [yellow]Could not enrich description for {job['title']} @ {job['company']}: {e}[/yellow]"
+            )
         finally:
             await browser.close()
 

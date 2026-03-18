@@ -21,9 +21,12 @@ BATCH_SIZE = int(os.getenv("AGENT_BATCH_SIZE", "3"))
 
 
 def _score_badge(score: float) -> str:
-    if score >= 8:  return "bold green"
-    if score >= 6:  return "yellow"
-    if score >= 4:  return "orange3"
+    if score >= 8:
+        return "bold green"
+    if score >= 6:
+        return "yellow"
+    if score >= 4:
+        return "orange3"
     return "red"
 
 
@@ -70,14 +73,16 @@ async def run_routing_pipeline() -> dict:
 
                 # Persist all fields to DB
                 update_job_agent_results(
-                    job_id           = job["id"],
-                    fit_score        = result["fit_score"],
-                    fit_reasoning    = result.get("fit_reasoning", ""),
-                    resume_variant   = result["resume_variant"],
-                    resume_reasoning = result.get("resume_reasoning", ""),
-                    outreach_draft   = result["outreach_draft"],
-                    people_to_reach  = json.dumps(result.get("linkedin_search_queries", [])),
-                    red_flags        = result.get("red_flags", ""),
+                    job_id=job["id"],
+                    fit_score=result["fit_score"],
+                    fit_reasoning=result.get("fit_reasoning", ""),
+                    resume_variant=result["resume_variant"],
+                    resume_reasoning=result.get("resume_reasoning", ""),
+                    outreach_draft=result["outreach_draft"],
+                    people_to_reach=json.dumps(
+                        result.get("linkedin_search_queries", [])
+                    ),
+                    red_flags=result.get("red_flags", ""),
                 )
                 scored += 1
                 results_log.append((job, result))
@@ -94,14 +99,14 @@ async def run_routing_pipeline() -> dict:
             header_style="bold magenta",
             show_lines=True,
         )
-        table.add_column("Score",   width=7)
-        table.add_column("Title",   width=28)
+        table.add_column("Score", width=7)
+        table.add_column("Title", width=28)
         table.add_column("Company", width=18)
-        table.add_column("Resume",  width=14)
+        table.add_column("Resume", width=14)
         table.add_column("Reasoning", width=46)
 
         for job, result in results_log:
-            score  = result["fit_score"]
+            score = result["fit_score"]
             colour = _score_badge(score)
             table.add_row(
                 f"[{colour}]{score:.1f}[/{colour}]",

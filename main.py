@@ -30,14 +30,16 @@ from notifier.digest import send_digest
 
 console = Console()
 
-KEYWORDS    = [k.strip() for k in os.getenv("JOB_KEYWORDS", "machine learning engineer").split(",")]
-LOCATION    = os.getenv("JOB_LOCATION", "Boston, MA")
+KEYWORDS = [
+    k.strip() for k in os.getenv("JOB_KEYWORDS", "machine learning engineer").split(",")
+]
+LOCATION = os.getenv("JOB_LOCATION", "Boston, MA")
 SCRAPE_TIME = os.getenv("SCRAPE_TIME", "08:00")
 
 
 async def _run_scraper(source: str, coro) -> tuple[int, int]:
     try:
-        jobs      = await coro
+        jobs = await coro
         new_count = sum(insert_job(j) for j in jobs)
         log_scrape_run(source, len(jobs), new_count)
         return len(jobs), new_count
@@ -51,15 +53,17 @@ async def _scrape_stage() -> int:
     (lf, ln), (sf, sn), (hf, hn) = await asyncio.gather(
         _run_scraper("linkedin", scrape_linkedin(KEYWORDS, LOCATION)),
         _run_scraper("simplify", scrape_simplify(KEYWORDS)),
-        _run_scraper("hn",       scrape_hn(KEYWORDS)),
+        _run_scraper("hn", scrape_hn(KEYWORDS)),
     )
     t = Table(title="Scrape Results", header_style="bold magenta")
-    t.add_column("Source", style="cyan"); t.add_column("Found", justify="right"); t.add_column("New", justify="right", style="green")
-    t.add_row("LinkedIn",  str(lf), str(ln))
-    t.add_row("Simplify",  str(sf), str(sn))
+    t.add_column("Source", style="cyan")
+    t.add_column("Found", justify="right")
+    t.add_column("New", justify="right", style="green")
+    t.add_row("LinkedIn", str(lf), str(ln))
+    t.add_row("Simplify", str(sf), str(sn))
     t.add_row("HN Hiring", str(hf), str(hn))
     total_new = ln + sn + hn
-    t.add_row("[bold]Total[/bold]", str(lf+sf+hf), f"[bold]{total_new}[/bold]")
+    t.add_row("[bold]Total[/bold]", str(lf + sf + hf), f"[bold]{total_new}[/bold]")
     console.print(t)
     return total_new
 
@@ -98,12 +102,16 @@ if __name__ == "__main__":
     console.log(f"  Schedule : daily at {SCRAPE_TIME}")
 
     if "--digest-only" in sys.argv:
-        console.log("[yellow]--digest-only: sending digest of already-scored jobs[/yellow]")
+        console.log(
+            "[yellow]--digest-only: sending digest of already-scored jobs[/yellow]"
+        )
         asyncio.run(run_pipeline(skip_scrape=True, skip_score=True))
         sys.exit(0)
 
     if "--score-only" in sys.argv:
-        console.log("[yellow]--score-only: scoring unscored jobs then sending digest[/yellow]")
+        console.log(
+            "[yellow]--score-only: scoring unscored jobs then sending digest[/yellow]"
+        )
         asyncio.run(run_pipeline(skip_scrape=True))
         sys.exit(0)
 

@@ -36,16 +36,15 @@ async def get_thread_comments(thread_id: int) -> list[dict]:
             thread = await resp.json()
 
         kids = thread.get("kids", [])[:200]  # Cap at 200 comments
-        console.log(f"[cyan]HN:[/cyan] Fetching {len(kids)} comments from thread {thread_id}")
+        console.log(
+            f"[cyan]HN:[/cyan] Fetching {len(kids)} comments from thread {thread_id}"
+        )
 
         # Fetch comments concurrently in batches of 20
         comments = []
         for i in range(0, len(kids), 20):
-            batch = kids[i:i+20]
-            tasks = [
-                session.get(HN_ITEMS_API.format(kid))
-                for kid in batch
-            ]
+            batch = kids[i : i + 20]
+            tasks = [session.get(HN_ITEMS_API.format(kid)) for kid in batch]
             responses = await asyncio.gather(*tasks, return_exceptions=True)
             for r in responses:
                 if isinstance(r, Exception):
@@ -53,7 +52,11 @@ async def get_thread_comments(thread_id: int) -> list[dict]:
                 try:
                     async with r as resp:
                         comment = await resp.json()
-                        if comment and not comment.get("dead") and not comment.get("deleted"):
+                        if (
+                            comment
+                            and not comment.get("dead")
+                            and not comment.get("deleted")
+                        ):
                             comments.append(comment)
                 except Exception:
                     continue
@@ -77,6 +80,7 @@ def parse_comment_to_job(comment: dict, ml_keywords: list[str]) -> dict | None:
 
     # Strip HTML tags for keyword matching
     import re
+
     clean_text = re.sub(r"<[^>]+>", " ", text)
     clean_lower = clean_text.lower()
 
@@ -95,7 +99,8 @@ def parse_comment_to_job(comment: dict, ml_keywords: list[str]) -> dict | None:
     # Try to extract a title from common patterns
     title_match = re.search(
         r"(machine learning|ML|AI|data scientist?|research engineer|software engineer)[^|\n]{0,60}",
-        clean_text, re.IGNORECASE
+        clean_text,
+        re.IGNORECASE,
     )
     title = title_match.group(0).strip()[:100] if title_match else "ML/AI Role"
 
@@ -116,9 +121,15 @@ async def scrape_hn(keywords: list[str]) -> list[dict]:
     Returns list of ML/AI job dicts from the latest HN hiring thread.
     """
     ml_keywords = keywords + [
-        "machine learning", "deep learning", "LLM", "NLP",
-        "computer vision", "data science", "AI engineer",
-        "ML engineer", "research engineer"
+        "machine learning",
+        "deep learning",
+        "LLM",
+        "NLP",
+        "computer vision",
+        "data science",
+        "AI engineer",
+        "ML engineer",
+        "research engineer",
     ]
 
     try:
@@ -134,7 +145,9 @@ async def scrape_hn(keywords: list[str]) -> list[dict]:
             if job:
                 jobs.append(job)
 
-        console.log(f"[green]HN:[/green] {len(jobs)} relevant jobs found in thread {thread_id}")
+        console.log(
+            f"[green]HN:[/green] {len(jobs)} relevant jobs found in thread {thread_id}"
+        )
         return jobs
 
     except Exception as e:

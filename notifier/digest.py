@@ -24,36 +24,54 @@ console = Console()
 
 
 def _score_colour(score: float) -> str:
-    if score >= 8: return "#22c55e"
-    if score >= 6: return "#eab308"
-    if score >= 4: return "#f97316"
+    if score >= 8:
+        return "#22c55e"
+    if score >= 6:
+        return "#eab308"
+    if score >= 4:
+        return "#f97316"
     return "#ef4444"
 
+
 def _score_label(score: float) -> str:
-    if score >= 8: return "Strong fit"
-    if score >= 6: return "Good fit"
-    if score >= 4: return "Partial fit"
+    if score >= 8:
+        return "Strong fit"
+    if score >= 6:
+        return "Good fit"
+    if score >= 4:
+        return "Partial fit"
     return "Weak fit"
 
+
 def _resume_badge(variant: str) -> str:
-    colours = {"ml_engineer": "#6366f1", "data_scientist": "#0ea5e9", "ai_researcher": "#8b5cf6"}
-    labels  = {"ml_engineer": "ML Engineer", "data_scientist": "Data Scientist", "ai_researcher": "AI Researcher"}
+    colours = {
+        "ml_engineer": "#6366f1",
+        "data_scientist": "#0ea5e9",
+        "ai_researcher": "#8b5cf6",
+    }
+    labels = {
+        "ml_engineer": "ML Engineer",
+        "data_scientist": "Data Scientist",
+        "ai_researcher": "AI Researcher",
+    }
     c = colours.get(variant, "#6b7280")
     l = labels.get(variant, variant)
-    return (f'<span style="background:{c};color:white;padding:2px 8px;border-radius:4px;'
-            f'font-size:12px;font-weight:600;">{l}</span>')
+    return (
+        f'<span style="background:{c};color:white;padding:2px 8px;border-radius:4px;'
+        f'font-size:12px;font-weight:600;">{l}</span>'
+    )
 
 
 def _build_html(jobs: list[dict], date_str: str) -> str:
-    total  = len(jobs)
+    total = len(jobs)
     strong = sum(1 for j in jobs if (j["fit_score"] or 0) >= 7)
 
     cards = ""
     for job in jobs:
-        score     = job["fit_score"] or 0
-        sc        = _score_colour(score)
-        sl        = _score_label(score)
-        variant   = job.get("resume_variant") or ""
+        score = job["fit_score"] or 0
+        sc = _score_colour(score)
+        sl = _score_label(score)
+        variant = job.get("resume_variant") or ""
         resume_fn = RESUME_VARIANTS.get(variant, {}).get("file", "—")
 
         try:
@@ -82,7 +100,7 @@ def _build_html(jobs: list[dict], date_str: str) -> str:
             queries_block = (
                 f'<div style="margin-top:14px;">'
                 f'<p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#374151;">'
-                f'LinkedIn Searches → Find People</p>'
+                f"LinkedIn Searches → Find People</p>"
                 f'<ul style="margin:0;padding-left:18px;">{query_links}</ul></div>'
             )
 
@@ -158,12 +176,13 @@ def _build_plaintext(jobs: list[dict], date_str: str) -> str:
     lines = [
         f"DAILY JOB DIGEST — {date_str}",
         f"{len(jobs)} roles | {sum(1 for j in jobs if (j['fit_score'] or 0) >= 7)} strong fits (7+)",
-        "=" * 60, "",
+        "=" * 60,
+        "",
     ]
     for i, job in enumerate(jobs, 1):
-        score   = job["fit_score"] or 0
+        score = job["fit_score"] or 0
         variant = job.get("resume_variant") or "—"
-        resume  = RESUME_VARIANTS.get(variant, {}).get("file", "—")
+        resume = RESUME_VARIANTS.get(variant, {}).get("file", "—")
         try:
             queries = json.loads(job.get("people_to_reach") or "[]")
         except Exception:
@@ -208,19 +227,21 @@ def send_digest() -> dict:
         console.log("[dim]Notifier: nothing new above threshold.[/dim]")
         return {"sent": False, "job_count": 0, "error": None}
 
-    date_str   = datetime.now().strftime("%A, %B %d %Y")
-    strong     = sum(1 for j in jobs if (j["fit_score"] or 0) >= 7)
-    subject    = (f"Job Digest {datetime.now().strftime('%b %d')} — "
-                  f"{len(jobs)} roles, {strong} strong fits")
+    date_str = datetime.now().strftime("%A, %B %d %Y")
+    strong = sum(1 for j in jobs if (j["fit_score"] or 0) >= 7)
+    subject = (
+        f"Job Digest {datetime.now().strftime('%b %d')} — "
+        f"{len(jobs)} roles, {strong} strong fits"
+    )
 
     console.log(f"[cyan]Notifier:[/cyan] sending digest ({len(jobs)} jobs)...")
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = smtp_user
-    msg["To"]      = notify_to
+    msg["From"] = smtp_user
+    msg["To"] = notify_to
     msg.attach(MIMEText(_build_plaintext(jobs, date_str), "plain"))
-    msg.attach(MIMEText(_build_html(jobs, date_str),      "html"))
+    msg.attach(MIMEText(_build_html(jobs, date_str), "html"))
 
     try:
         with smtplib.SMTP(smtp_host, smtp_port) as srv:

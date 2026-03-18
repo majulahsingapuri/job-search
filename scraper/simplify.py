@@ -15,7 +15,13 @@ SIMPLIFY_BASE = "https://simplify.jobs/jobs"
 
 
 def build_simplify_url(keyword: str) -> str:
-    params = {"search": keyword, "experience": "Internship,Entry Level"}
+    params = {
+        "query": keyword,
+        "experience": "Internship;Entry Level/New Grad",
+        "state": "United States",
+        "country": "United States",
+        "jobType": "Internship/Full-Time",
+    }
     return f"{SIMPLIFY_BASE}?{urllib.parse.urlencode(params)}"
 
 
@@ -28,8 +34,7 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
+            headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
         context = await browser.new_context(
             user_agent=(
@@ -54,7 +59,9 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
                     await page.wait_for_timeout(1200)
 
                 # Simplify job cards — selectors may need updating if they change markup
-                cards = await page.query_selector_all("a[data-testid='job-card'], div[class*='JobCard'], li[class*='job-item']")
+                cards = await page.query_selector_all(
+                    "a[data-testid='job-card'], div[class*='JobCard'], li[class*='job-item']"
+                )
 
                 # Fallback: grab all job-like links
                 if not cards:
@@ -97,14 +104,16 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
 
                         if title and job_url and job_url not in seen_urls:
                             seen_urls.add(job_url)
-                            jobs.append({
-                                "title": title,
-                                "company": company or "Unknown",
-                                "location": location,
-                                "url": job_url,
-                                "source": "simplify",
-                                "description": "",
-                            })
+                            jobs.append(
+                                {
+                                    "title": title,
+                                    "company": company or "Unknown",
+                                    "location": location,
+                                    "url": job_url,
+                                    "source": "simplify",
+                                    "description": "",
+                                }
+                            )
                     except Exception as e:
                         continue
 
