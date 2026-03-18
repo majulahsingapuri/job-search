@@ -5,9 +5,6 @@ Uses Playwright in headless mode to handle JS-rendered content.
 """
 
 import asyncio
-import os
-import re
-from datetime import datetime
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from rich.console import Console
 
@@ -120,41 +117,33 @@ async def scrape_linkedin(keywords: list[str], location: str) -> list[dict]:
             except Exception as e:
                 console.log(f"  [red]Error: {e}[/red]")
 
+        jobs = await enrich_job_descriptions(jobs, context)
         await browser.close()
 
     console.log(f"[green]LinkedIn:[/green] {len(jobs)} total jobs collected")
     return jobs
 
 
-async def enrich_job_description(job: dict) -> dict:
-    """
-    Visit the individual job page and extract the description text.
-    Call this selectively — only for jobs that pass deduplication.
-    """
-    if not job.get("url"):
-        return job
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
-        context = await browser.new_context()
+async def enrich_job_descriptions(jobs: list[dict], context) -> list[dict]:
+    """Enrich a list of jobs reusing an existing browser context."""
+    enriched = []
+    for job in jobs:
+        if not job.get("url"):
+            enriched.append(job)
+            continue
         page = await context.new_page()
-
         try:
             await page.goto(job["url"], timeout=20000, wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
-
             desc_el = await page.query_selector("div.show-more-less-html__markup")
             if desc_el:
-                job["description"] = (await desc_el.inner_text()).strip()[
-                    :3000
-                ]  # Cap at 3k chars
+                job["description"] = (await desc_el.inner_text()).strip()[:3000]
         except Exception as e:
             console.log(
-                f"  [yellow]Could not enrich description for {job['title']} @ {job['company']}: {e}[/yellow]"
+                f"  [yellow]Enrich failed for {job['title']} @ {job['company']}: {e}[/yellow]"
             )
         finally:
-            await browser.close()
-
-    return job
+            await page.close()
+        await asyncio.sleep(1)
+        enriched.append(job)
+    return enriched

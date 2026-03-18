@@ -50,8 +50,8 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
             console.log(f"[cyan]Simplify:[/cyan] Scraping '{keyword}'")
 
             try:
-                await page.goto(url, timeout=30000, wait_until="networkidle")
-                await page.wait_for_timeout(3000)
+                await page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                await page.wait_for_timeout(4000)
 
                 # Scroll to trigger lazy loading
                 for _ in range(4):
@@ -124,7 +124,40 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
             except Exception as e:
                 console.log(f"  [red]Error: {e}[/red]")
 
+        jobs = await enrich_job_descriptions(jobs, context)
         await browser.close()
 
     console.log(f"[green]Simplify:[/green] {len(jobs)} total jobs collected")
     return jobs
+
+
+async def enrich_job_descriptions(jobs: list[dict], context) -> list[dict]:
+    """Enrich a list of jobs reusing an existing browser context."""
+    enriched = []
+    for job in jobs:
+        if not job.get("url"):
+            enriched.append(job)
+            continue
+        page = await context.new_page()
+        try:
+            await page.goto(job["url"], timeout=30000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(3000)
+            # Simplify job detail page description selectors
+            for sel in [
+                "div[class*='description']",
+                "div[class*='Details']",
+                "section[class*='job']",
+            ]:
+                desc_el = await page.query_selector(sel)
+                if desc_el:
+                    job["description"] = (await desc_el.inner_text()).strip()[:3000]
+                    break
+        except Exception as e:
+            console.log(
+                f"  [yellow]Enrich failed for {job['title']} @ {job['company']}: {e}[/yellow]"
+            )
+        finally:
+            await page.close()
+        await asyncio.sleep(1)
+        enriched.append(job)
+    return enriched
