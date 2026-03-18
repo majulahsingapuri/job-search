@@ -7,6 +7,9 @@ Usage:
     python main.py --now         # Run full pipeline once, then exit
     python main.py --score-only  # Skip scraping, score unscored jobs, send digest
     python main.py --digest-only # Skip scraping + scoring, just send digest
+    python main.py --linkedin    # Run only LinkedIn scraper
+    python main.py --simplify    # Run only Simplify scraper
+    python main.py --hn          # Run only HN Hiring scraper
 """
 
 import asyncio
@@ -49,31 +52,67 @@ async def _run_scraper(source: str, coro) -> tuple[int, int]:
         return 0, 0
 
 
-async def _scrape_stage() -> int:
-    (lf, ln), (sf, sn), (hf, hn) = await asyncio.gather(
-        _run_scraper("linkedin", scrape_linkedin(KEYWORDS, LOCATION)),
-        _run_scraper("simplify", scrape_simplify(KEYWORDS)),
-        _run_scraper("hn", scrape_hn(KEYWORDS)),
-    )
+def _parse_selected_scrapers(argv: list[str]) -> list[str]:
+    selected = []
+    if "--linkedin" in argv:
+        selected.append("linkedin")
+    if "--simplify" in argv:
+        selected.append("simplify")
+    if "--hn" in argv:
+        selected.append("hn")
+    return selected or ["linkedin", "simplify", "hn"]
+
+
+async def _scrape_stage(selected: list[str]) -> int:
+    tasks = []
+    ordered = []
+    if "linkedin" in selected:
+        ordered.append("linkedin")
+        tasks.append(_run_scraper("linkedin", scrape_linkedin(KEYWORDS, LOCATION)))
+    if "simplify" in selected:
+        ordered.append("simplify")
+        tasks.append(_run_scraper("simplify", scrape_simplify(KEYWORDS)))
+    if "hn" in selected:
+        ordered.append("hn")
+        tasks.append(_run_scraper("hn", scrape_hn(KEYWORDS)))
+
+    results = await asyncio.gather(*tasks) if tasks else []
+    by_source = {src: res for src, res in zip(ordered, results)}
+
     t = Table(title="Scrape Results", header_style="bold magenta")
     t.add_column("Source", style="cyan")
     t.add_column("Found", justify="right")
     t.add_column("New", justify="right", style="green")
-    t.add_row("LinkedIn", str(lf), str(ln))
-    t.add_row("Simplify", str(sf), str(sn))
-    t.add_row("HN Hiring", str(hf), str(hn))
-    total_new = ln + sn + hn
-    t.add_row("[bold]Total[/bold]", str(lf + sf + hf), f"[bold]{total_new}[/bold]")
+    total_found = 0
+    total_new = 0
+    if "linkedin" in selected:
+        lf, ln = by_source.get("linkedin", (0, 0))
+        t.add_row("LinkedIn", str(lf), str(ln))
+        total_found += lf
+        total_new += ln
+    if "simplify" in selected:
+        sf, sn = by_source.get("simplify", (0, 0))
+        t.add_row("Simplify", str(sf), str(sn))
+        total_found += sf
+        total_new += sn
+    if "hn" in selected:
+        hf, hn = by_source.get("hn", (0, 0))
+        t.add_row("HN Hiring", str(hf), str(hn))
+        total_found += hf
+        total_new += hn
+    t.add_row("[bold]Total[/bold]", str(total_found), f"[bold]{total_new}[/bold]")
     console.print(t)
     return total_new
 
 
-async def run_pipeline(skip_scrape: bool = False, skip_score: bool = False):
+async def run_pipeline(
+    skip_scrape: bool = False, skip_score: bool = False, selected: list[str] | None = None
+):
     console.rule(f"[bold blue]Job Agent — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
     # ── Stage 1: Scrape ───────────────────────────────────────────────────────
     if not skip_scrape:
-        total_new = await _scrape_stage()
+        total_new = await _scrape_stage(selected or ["linkedin", "simplify", "hn"])
         if total_new == 0 and not skip_score:
             console.log("[yellow]No new jobs scraped.[/yellow]")
             # Still fall through to digest in case there are unnotified scored jobs
@@ -90,37 +129,39 @@ async def run_pipeline(skip_scrape: bool = False, skip_score: bool = False):
     console.rule("[dim]Done[/dim]")
 
 
-def run_pipeline_sync():
-    asyncio.run(run_pipeline())
+def run_pipeline_sync(selected: list[str]):
+    asyncio.run(run_pipeline(selected=selected))
 
 
 if __name__ == "__main__":
     init_db()
+    SELECTED_SCRAPERS = _parse_selected_scrapers(sys.argv)
     console.log("[bold green]Job Agent started[/bold green]")
     console.log(f"  Keywords : {KEYWORDS}")
     console.log(f"  Location : {LOCATION}")
     console.log(f"  Schedule : daily at {SCRAPE_TIME}")
+    console.log(f"  Scrapers : {', '.join(SELECTED_SCRAPERS)}")
 
     if "--digest-only" in sys.argv:
         console.log(
             "[yellow]--digest-only: sending digest of already-scored jobs[/yellow]"
         )
-        asyncio.run(run_pipeline(skip_scrape=True, skip_score=True))
+        asyncio.run(run_pipeline(skip_scrape=True, skip_score=True, selected=SELECTED_SCRAPERS))
         sys.exit(0)
 
     if "--score-only" in sys.argv:
         console.log(
             "[yellow]--score-only: scoring unscored jobs then sending digest[/yellow]"
         )
-        asyncio.run(run_pipeline(skip_scrape=True))
+        asyncio.run(run_pipeline(skip_scrape=True, selected=SELECTED_SCRAPERS))
         sys.exit(0)
 
     if "--now" in sys.argv:
         console.log("[yellow]--now: running full pipeline immediately[/yellow]")
-        asyncio.run(run_pipeline())
+        asyncio.run(run_pipeline(selected=SELECTED_SCRAPERS))
         sys.exit(0)
 
-    schedule.every().day.at(SCRAPE_TIME).do(run_pipeline_sync)
+    schedule.every().day.at(SCRAPE_TIME).do(run_pipeline_sync, SELECTED_SCRAPERS)
     console.log(f"[green]Scheduler running. Next run at {SCRAPE_TIME}[/green]")
     while True:
         schedule.run_pending()

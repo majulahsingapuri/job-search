@@ -164,7 +164,7 @@ email dashboard and use that as `SMTP_PASS`.
 
 - LinkedIn scraping works without login (public listings only). If LinkedIn
   updates their markup, update CSS selectors in `scraper/linkedin.py`.
-- Simplify.jobs selectors have multiple fallbacks for resilience.
+- Simplify.jobs scraping uses the Typesense API (no browser/DOM selectors).
 - HN scraping uses the official Algolia API — very stable, no browser needed.
 - Claude API calls are batched (default 3 concurrent) to stay within rate limits.
   Increase `AGENT_BATCH_SIZE` in `.env` if you have a higher-tier API plan.

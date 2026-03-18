@@ -1,28 +1,75 @@
 """
 scraper/simplify.py
-Scrapes Simplify.jobs for internship/new grad listings.
-Simplify renders via JS — we use Playwright and target their search page.
+Fetches Simplify.jobs listings via their Typesense-backed API (no browser).
 """
 
 import asyncio
-import urllib.parse
-from playwright.async_api import async_playwright, TimeoutError as PWTimeout
+import html
+import re
+from typing import Any
+
+import aiohttp
 from rich.console import Console
 
 console = Console()
 
-SIMPLIFY_BASE = "https://simplify.jobs/jobs"
+SIMPLIFY_SEARCH_URL = "https://js-ha.simplify.jobs/multi_search"
+SIMPLIFY_TYPESENSE_API_KEY = (
+    "SWF1ODFZbzBkcVlVdnVwT2FqUE5EZ3JpSk5hVmdpUHg1SklXWEdGbHZVRT1POHJie"
+    "yJleGNsdWRlX2ZpZWxkcyI6ImNvbXBhbnlfdXJsLGNhdGVnb3JpZXMsYWRkaXRpb2"
+    "5hbF9yZXF1aXJlbWVudHMsY291bnRyaWVzLGRlZ3JlZXMsZ2VvbG9jYXRpb25zLG"
+    "luZHVzdHJpZXMsaXNfc2ltcGxlX2FwcGxpY2F0aW9uLGpvYl9saXN0cyxsZWFkZX"
+    "JzaGlwX3R5cGUsc2VjdXJpdHlfY2xlYXJhbmNlLHNraWxscyx1cmwifQ=="
+)
+SIMPLIFY_FILTER_BY = (
+    "countries:=[`United States`] && experience_level:[`Entry Level/New Grad`] && "
+    "security_clearance:[false] && sponsors_h1b:[true] && "
+    "type:[`Full-Time`,`Internship`]"
+)
+SIMPLIFY_PER_PAGE = 50
+SIMPLIFY_MAX_PAGES = 3
+
+SIMPLIFY_DETAIL_URL = "https://api.simplify.jobs/v2/job-posting/:id/{posting_id}/company"
 
 
-def build_simplify_url(keyword: str) -> str:
-    params = {
-        "query": keyword,
-        "experience": "Internship;Entry Level/New Grad",
-        "state": "United States",
-        "country": "United States",
-        "jobType": "Internship/Full-Time",
+def _build_search_payload(keyword: str, page: int) -> dict[str, Any]:
+    return {
+        "searches": [
+            {
+                "query_by": "title,company_name,functions,locations",
+                "per_page": SIMPLIFY_PER_PAGE,
+                "sort_by": "_text_match:desc,start_date:desc",
+                "highlight_full_fields": "title,company_name,functions,locations",
+                "collection": "jobs",
+                "q": keyword,
+                "facet_by": (
+                    "countries,degrees,experience_level,functions,locations,seasons,"
+                    "security_clearance,sponsors_h1b,travel_requirements,type"
+                ),
+                "filter_by": SIMPLIFY_FILTER_BY,
+                "max_facet_values": 50,
+                "page": page,
+            }
+        ]
     }
-    return f"{SIMPLIFY_BASE}?{urllib.parse.urlencode(params)}"
+
+
+def _pick_location(locations: list[str]) -> str:
+    if not locations:
+        return ""
+    for loc in locations:
+        if loc and loc.strip() and loc.strip() != "United States":
+            return loc.strip()
+    return locations[0].strip()
+
+
+def _html_to_text(raw_html: str) -> str:
+    if not raw_html:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", raw_html)
+    text = html.unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 async def scrape_simplify(keywords: list[str]) -> list[dict]:
@@ -30,134 +77,120 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
     Returns list of job dicts:
     {title, company, location, url, source, description}
     """
-    jobs = []
+    jobs: list[dict] = []
+    seen_posting_ids: set[str] = set()
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            )
-        )
-        page = await context.new_page()
+    headers = {"Content-Type": "application/json"}
+    params = {"x-typesense-api-key": SIMPLIFY_TYPESENSE_API_KEY}
+    timeout = aiohttp.ClientTimeout(total=30)
 
+    async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
         for keyword in keywords:
-            url = build_simplify_url(keyword)
             console.log(f"[cyan]Simplify:[/cyan] Scraping '{keyword}'")
+            total_hits = 0
 
-            try:
-                await page.goto(url, timeout=30000, wait_until="domcontentloaded")
-                await page.wait_for_timeout(4000)
-
-                # Scroll to trigger lazy loading
-                for _ in range(4):
-                    await page.keyboard.press("End")
-                    await page.wait_for_timeout(1200)
-
-                # Simplify job cards — selectors may need updating if they change markup
-                cards = await page.query_selector_all(
-                    "a[data-testid='job-card'], div[class*='JobCard'], li[class*='job-item']"
-                )
-
-                # Fallback: grab all job-like links
-                if not cards:
-                    cards = await page.query_selector_all("a[href*='/jobs/']")
-
-                console.log(f"  Found {len(cards)} cards")
-
-                seen_urls = set()
-                for card in cards:
-                    try:
-                        # Try multiple selector strategies
-                        title = ""
-                        company = ""
-                        location = ""
-                        job_url = ""
-
-                        # Title
-                        for sel in ["h3", "h2", "[class*='title']", "[class*='Title']"]:
-                            el = await card.query_selector(sel)
-                            if el:
-                                title = (await el.inner_text()).strip()
-                                break
-
-                        # Company
-                        for sel in ["[class*='company']", "[class*='Company']", "p"]:
-                            el = await card.query_selector(sel)
-                            if el:
-                                text = (await el.inner_text()).strip()
-                                if text and text != title:
-                                    company = text
-                                    break
-
-                        # URL
-                        href = await card.get_attribute("href")
-                        if href:
-                            if href.startswith("http"):
-                                job_url = href.split("?")[0]
-                            else:
-                                job_url = f"https://simplify.jobs{href.split('?')[0]}"
-
-                        if title and job_url and job_url not in seen_urls:
-                            seen_urls.add(job_url)
-                            jobs.append(
-                                {
-                                    "title": title,
-                                    "company": company or "Unknown",
-                                    "location": location,
-                                    "url": job_url,
-                                    "source": "simplify",
-                                    "description": "",
-                                }
+            for page in range(1, SIMPLIFY_MAX_PAGES + 1):
+                payload = _build_search_payload(keyword, page)
+                try:
+                    async with session.post(
+                        SIMPLIFY_SEARCH_URL, params=params, json=payload
+                    ) as resp:
+                        if resp.status != 200:
+                            console.log(
+                                f"  [yellow]Search HTTP {resp.status} on page {page}[/yellow]"
                             )
-                    except Exception as e:
+                            break
+                        data = await resp.json()
+                except Exception as e:
+                    console.log(f"  [red]Search error page {page}: {e}[/red]")
+                    break
+
+                results = data.get("results", [])
+                if not results:
+                    break
+                hits = results[0].get("hits", [])
+                if not hits:
+                    break
+
+                total_hits += len(hits)
+                for hit in hits:
+                    doc = hit.get("document", {})
+                    posting_id = doc.get("posting_id")
+                    if not posting_id or posting_id in seen_posting_ids:
+                        continue
+                    seen_posting_ids.add(posting_id)
+
+                    title = (doc.get("title") or "").strip()
+                    company = (doc.get("company_name") or "").strip()
+                    location = _pick_location(doc.get("locations", []) or [])
+
+                    if not title or not company:
                         continue
 
-                await asyncio.sleep(3)
+                    jobs.append(
+                        {
+                            "title": title,
+                            "company": company,
+                            "location": location,
+                            "url": "",
+                            "source": "simplify",
+                            "description": "",
+                            "posting_id": posting_id,
+                        }
+                    )
 
-            except PWTimeout:
-                console.log(f"  [red]Timeout on Simplify for '{keyword}'[/red]")
-            except Exception as e:
-                console.log(f"  [red]Error: {e}[/red]")
+                await asyncio.sleep(0.3)
 
-        jobs = await enrich_job_descriptions(jobs, context)
-        await browser.close()
+            console.log(f"  Found {total_hits} hits")
+            await asyncio.sleep(1)
+
+        jobs = await enrich_job_descriptions(jobs, session)
 
     console.log(f"[green]Simplify:[/green] {len(jobs)} total jobs collected")
     return jobs
 
 
-async def enrich_job_descriptions(jobs: list[dict], context) -> list[dict]:
-    """Enrich a list of jobs reusing an existing browser context."""
-    enriched = []
-    for job in jobs:
-        if not job.get("url"):
-            enriched.append(job)
-            continue
-        page = await context.new_page()
-        try:
-            await page.goto(job["url"], timeout=30000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(3000)
-            # Simplify job detail page description selectors
-            for sel in [
-                "div[class*='description']",
-                "div[class*='Details']",
-                "section[class*='job']",
-            ]:
-                desc_el = await page.query_selector(sel)
-                if desc_el:
-                    job["description"] = (await desc_el.inner_text()).strip()[:3000]
-                    break
-        except Exception as e:
-            console.log(
-                f"  [yellow]Enrich failed for {job['title']} @ {job['company']}: {e}[/yellow]"
-            )
-        finally:
-            await page.close()
-        await asyncio.sleep(1)
+async def enrich_job_descriptions(jobs: list[dict], session: aiohttp.ClientSession) -> list[dict]:
+    """Enrich a list of jobs by fetching detail JSON from Simplify API."""
+    enriched: list[dict] = []
+    total = len(jobs)
+    processed = 0
+    console.log(f"  Enriching 0/{total}")
+
+    sem = asyncio.Semaphore(5)
+
+    async def _enrich_job(job: dict) -> dict:
+        posting_id = job.get("posting_id")
+        if not posting_id:
+            return job
+
+        url = SIMPLIFY_DETAIL_URL.format(posting_id=posting_id)
+        async with sem:
+            try:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        console.log(
+                            f"  [yellow]Detail HTTP {resp.status} for {posting_id}[/yellow]"
+                        )
+                        return job
+                    data = await resp.json()
+            except Exception as e:
+                console.log(
+                    f"  [yellow]Enrich failed for {job.get('title','')} @ {job.get('company','')}: {e}[/yellow]"
+                )
+                return job
+
+        description_html = data.get("description", "") or ""
+        job["description"] = _html_to_text(description_html)[:3000]
+        job["url"] = data.get("url") or f"https://simplify.jobs/jobs/click/{posting_id}"
+        return job
+
+    tasks = [_enrich_job(job) for job in jobs]
+    for coro in asyncio.as_completed(tasks):
+        job = await coro
         enriched.append(job)
+        processed += 1
+        if processed % 10 == 0 or processed == total:
+            console.log(f"  Enriched {processed}/{total}")
+
     return enriched

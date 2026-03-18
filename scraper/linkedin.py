@@ -127,9 +127,15 @@ async def scrape_linkedin(keywords: list[str], location: str) -> list[dict]:
 async def enrich_job_descriptions(jobs: list[dict], context) -> list[dict]:
     """Enrich a list of jobs reusing an existing browser context."""
     enriched = []
+    total = len(jobs)
+    processed = 0
+    console.log(f"  Enriching 0/{total}")
     for job in jobs:
         if not job.get("url"):
             enriched.append(job)
+            processed += 1
+            if processed % 10 == 0 or processed == total:
+                console.log(f"  Enriched {processed}/{total}")
             continue
         page = await context.new_page()
         try:
@@ -146,4 +152,7 @@ async def enrich_job_descriptions(jobs: list[dict], context) -> list[dict]:
             await page.close()
         await asyncio.sleep(1)
         enriched.append(job)
+        processed += 1
+        if processed % 10 == 0 or processed == total:
+            console.log(f"  Enriched {processed}/{total}")
     return enriched
