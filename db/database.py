@@ -10,7 +10,7 @@ from pathlib import Path
 
 import os
 
-DB_PATH = Path(os.getenv("DB_PATH", "./jobs.sqlite"))
+DB_PATH = Path(os.getenv("DB_PATH", "/app/db/jobs.sqlite"))
 
 
 def get_connection() -> sqlite3.Connection:
