@@ -23,13 +23,15 @@ SIMPLIFY_TYPESENSE_API_KEY = (
 )
 SIMPLIFY_FILTER_BY = (
     "countries:=[`United States`] && experience_level:[`Entry Level/New Grad`] && "
-    "security_clearance:[false] && sponsors_h1b:[true] && "
+    # "security_clearance:[false] && sponsors_h1b:[true] && "
     "type:[`Full-Time`,`Internship`]"
 )
 SIMPLIFY_PER_PAGE = 50
 SIMPLIFY_MAX_PAGES = 3
 
-SIMPLIFY_DETAIL_URL = "https://api.simplify.jobs/v2/job-posting/:id/{posting_id}/company"
+SIMPLIFY_DETAIL_URL = (
+    "https://api.simplify.jobs/v2/job-posting/:id/{posting_id}/company"
+)
 
 
 def _build_search_payload(keyword: str, page: int) -> dict[str, Any]:
@@ -150,7 +152,9 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
     return jobs
 
 
-async def enrich_job_descriptions(jobs: list[dict], session: aiohttp.ClientSession) -> list[dict]:
+async def enrich_job_descriptions(
+    jobs: list[dict], session: aiohttp.ClientSession
+) -> list[dict]:
     """Enrich a list of jobs by fetching detail JSON from Simplify API."""
     enriched: list[dict] = []
     total = len(jobs)

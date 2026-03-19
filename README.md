@@ -70,16 +70,17 @@ cp .env.example .env
 
 Edit `.env`:
 
-| Variable            | What to set                                      |
-|---------------------|--------------------------------------------------|
-| `ANTHROPIC_API_KEY` | Your Anthropic API key                           |
-| `SMTP_USER`         | `your@yourdomain.com` (Porkbun email address)    |
-| `SMTP_PASS`         | Porkbun email password                           |
-| `NOTIFY_TO`         | Where to send digests (can be same as SMTP_USER) |
-| `JOB_KEYWORDS`      | Comma-separated search terms                     |
-| `JOB_LOCATION`      | e.g. `Boston, MA`                                |
-| `MIN_FIT_SCORE`     | Minimum score to include in digest (default: 6)  |
-| `SCRAPE_TIME`       | Daily run time in 24h format (default: `08:00`)  |
+| Variable                 | What to set                                                           |
+|--------------------------|-----------------------------------------------------------------------|
+| `ANTHROPIC_API_KEY`      | Your Anthropic API key                                                |
+| `SMTP_USER`              | `your@yourdomain.com` (Porkbun email address)                         |
+| `SMTP_PASS`              | Porkbun email password                                                |
+| `NOTIFY_TO`              | Where to send digests (can be same as SMTP_USER)                      |
+| `JOB_KEYWORDS`           | Comma-separated search terms                                          |
+| `JOB_LOCATION`           | e.g. `Boston, MA`                                                     |
+| `MIN_FIT_SCORE`          | Minimum score to include in digest (default: 6)                       |
+| `SCRAPE_TIME`            | Daily run time in 24h format (default: `08:00`)                       |
+| `LINKEDIN_STORAGE_STATE` | Path to saved LinkedIn session (default: `.auth/linkedin_state.json`) |
 
 ### 2. Update your resume variants
 
@@ -100,6 +101,21 @@ docker-compose up --build -d
 ```
 
 The container runs 24/7 and fires the pipeline once a day at `SCRAPE_TIME`.
+
+---
+
+## LinkedIn login (optional)
+
+By default, LinkedIn scraping works without login (public listings only). To
+access more listings, save a session once and reuse it:
+
+```bash
+python scraper/linkedin.py --login
+```
+
+When the browser opens, complete the login, then return to the terminal and
+press Enter. A session file will be saved to `.auth/linkedin_state.json` (or
+the path set by `LINKEDIN_STORAGE_STATE`).
 
 ---
 
