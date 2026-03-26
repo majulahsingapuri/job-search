@@ -10,10 +10,13 @@ Claude-powered routing agent. For each unscored job it:
 Returns structured JSON — all fields written to SQLite by pipeline.py.
 """
 
-import os
+from enum import Enum
 import json
 import asyncio
-from anthropic import Anthropic
+from typing import Annotated, Tuple
+from pydantic_ai import Agent
+from pydantic import BaseModel, Field
+from pydantic_ai.models.anthropic import AnthropicModelSettings
 from rich.console import Console
 from config.resumes import RESUME_VARIANTS
 
@@ -68,21 +71,6 @@ No preamble. No markdown fences. No explanation outside the JSON.
 ## Available Resume Variants
 {RESUME_SUMMARY}
 
-## Required JSON schema
-{{
-  "fit_score": <float 0.0-10.0>,
-  "fit_reasoning": "<2-3 sentences: why this score, what aligns, what's missing>",
-  "resume_variant": "<ml_engineer | data_scientist | ai_researcher>",
-  "resume_reasoning": "<1 sentence: why this variant>",
-  "outreach_draft": "<LinkedIn cold note, max 300 chars, personalised to role + company>",
-  "linkedin_search_queries": [
-    "<query to find recruiter or hiring manager at company>",
-    "<query to find ML/AI team lead at company>",
-    "<query to find Northeastern or NTU alum at company>"
-  ],
-  "red_flags": "<concerns about seniority mismatch, visa sponsorship, location, or domain fit — or empty string>"
-}}
-
 ## Scoring rubric
 10  = perfect alignment (title + stack + seniority all match)
 7-9 = strong (2 of 3 align, minor gaps)
@@ -92,6 +80,7 @@ No preamble. No markdown fences. No explanation outside the JSON.
 
 ## Outreach rules
 - Open by naming the specific role and company
+- Do not put a [Name] placeholder
 - Reference exactly ONE concrete thing from Bhargav's background that is relevant
 - Confident and peer-level tone — not grovelling
 - End with a single low-friction ask (15 min chat, advice, referral)
@@ -99,12 +88,50 @@ No preamble. No markdown fences. No explanation outside the JSON.
 """.strip()
 
 
+class ResumeVariant(str, Enum):
+    ML_ENGINEER = "ml_engineer"
+    DATA_SCIENTIST = "data_scientist"
+    AI_RESEARCHER = "ai_researcher"
+
+
+SearchQueryTuple = Tuple[
+    Annotated[
+        str, Field(description="query to find recruiter or hiring manager at company")
+    ],
+    Annotated[str, Field(description="query to find ML/AI team lead at company")],
+    Annotated[
+        str, Field(description="query to find Northeastern or NTU alum at company")
+    ],
+]
+
+
+class LLMResponse(BaseModel):
+    fit_score: float = Field(ge=0.0, le=10.0)
+    fit_reasoning: str = Field(
+        description="2-3 sentences: why this score, what aligns, what's missing"
+    )
+    resume_variant: ResumeVariant
+    resume_reasoning: str = (Field(description="1 sentence: why this variant"),)
+    outreach_draft: str = Field(
+        description="LinkedIn cold note, max 300 chars, personalised to role + company"
+    )
+    linkedin_search_queries: SearchQueryTuple
+    red_flags: str = Field(
+        description="concerns about seniority mismatch, visa sponsorship, location, or domain fit — or empty string"
+    )
+
+
 async def score_job_async(job: dict) -> tuple[dict, dict | None]:
     """
     Score a single job. Returns (job, result_dict) or (job, None) on failure.
     Async so batches can run concurrently.
     """
-    client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = Agent(
+        "anthropic:claude-4-sonnet-20250514",
+        system_prompt=SYSTEM_PROMPT,
+        output_type=LLMResponse,
+        model_settings=AnthropicModelSettings(anthropic_cache_instructions=True),
+    )
 
     job_text = (
         f"Title: {job['title']}\n"
@@ -120,50 +147,10 @@ async def score_job_async(job: dict) -> tuple[dict, dict | None]:
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1000,
-                system=[
-                    {
-                        "type": "text",
-                        "text": SYSTEM_PROMPT,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                messages=[
-                    {"role": "user", "content": f"Analyse this job:\n\n{job_text}"}
-                ],
-            ),
+            lambda: client.run_sync(f"Analyse this job:\n\n{job_text}"),
         )
 
-        raw = response.content[0].text.strip()
-
-        # Strip accidental markdown fences
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-
-        result = json.loads(raw)
-
-        # Validate required keys
-        required = {
-            "fit_score",
-            "fit_reasoning",
-            "resume_variant",
-            "resume_reasoning",
-            "outreach_draft",
-            "linkedin_search_queries",
-        }
-        missing = required - result.keys()
-        if missing:
-            raise ValueError(f"Claude response missing keys: {missing}")
-
-        # Coerce and clamp fit_score
-        result["fit_score"] = max(0.0, min(10.0, float(result["fit_score"])))
-
-        return job, result
+        return job, response.output.model_dump()
 
     except json.JSONDecodeError as e:
         console.log(

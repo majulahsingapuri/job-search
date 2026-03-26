@@ -31,9 +31,7 @@ def _get_storage_state_path() -> Path:
 
 async def _create_context(browser, storage_state: Path | None) -> tuple:
     if storage_state and storage_state.exists():
-        console.log(
-            f"[cyan]LinkedIn:[/cyan] Using saved session at {storage_state}"
-        )
+        console.log(f"[cyan]LinkedIn:[/cyan] Using saved session at {storage_state}")
         context = await browser.new_context(
             user_agent=USER_AGENT, storage_state=str(storage_state)
         )
@@ -101,9 +99,7 @@ async def login_linkedin() -> None:
         await context.storage_state(path=str(storage_state))
         await browser.close()
 
-    console.log(
-        f"[green]LinkedIn:[/green] Session saved to {storage_state}"
-    )
+    console.log(f"[green]LinkedIn:[/green] Session saved to {storage_state}")
 
 
 # Maps our keyword to LinkedIn's URL-encoded equivalent
@@ -184,6 +180,9 @@ async def scrape_linkedin(keywords: list[str], location: str) -> list[dict]:
                         job_url = job_url.split("?")[0] if job_url else ""
 
                         if title and company:
+                            # Skip aggregator postings
+                            if company in ["Lensa", "WayUp"]:
+                                continue
                             jobs.append(
                                 {
                                     "title": title,

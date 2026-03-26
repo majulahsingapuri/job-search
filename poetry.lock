@@ -444,6 +444,25 @@ files = [
 ]
 
 [[package]]
+name = "genai-prices"
+version = "0.0.56"
+description = "Calculate prices for calling LLM inference APIs."
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "genai_prices-0.0.56-py3-none-any.whl", hash = "sha256:dbe86be8f3f556bed1b72209ed36851fec8b01793b3b220f42921a4e7da945f6"},
+    {file = "genai_prices-0.0.56.tar.gz", hash = "sha256:ac24b16a84d0ab97539bfa48dfa4649689de8e3ce71c12ebacef29efb1998045"},
+]
+
+[package.dependencies]
+httpx = ">=0.27"
+pydantic = ">=2.10"
+
+[package.extras]
+cli = ["pydantic-settings (>=2.11)", "rich (>=14.3.2)", "rich-argparse (>=1.7.2)"]
+
+[[package]]
 name = "greenlet"
 version = "3.3.2"
 description = "Lightweight in-process concurrent programming"
@@ -509,6 +528,21 @@ files = [
 [package.extras]
 docs = ["Sphinx", "furo"]
 test = ["objgraph", "psutil", "setuptools"]
+
+[[package]]
+name = "griffelib"
+version = "2.0.1"
+description = "Signatures for entire Python programs. Extract the structure, the frame, the skeleton of your project, to generate API documentation or find breaking changes in your API."
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "griffelib-2.0.1-py3-none-any.whl", hash = "sha256:b769eed581c0e857d362fc8fcd8e57ecd2330c124b6104ac8b4c1c86d76970aa"},
+    {file = "griffelib-2.0.1.tar.gz", hash = "sha256:59f39eabb4c777483a3823e39e8f9e03e69df271a7e49aee64e91a8cfa91bdf5"},
+]
+
+[package.extras]
+pypi = ["pip (>=24.0)", "platformdirs (>=4.2)", "wheel (>=0.42)"]
 
 [[package]]
 name = "h11"
@@ -583,6 +617,30 @@ files = [
 
 [package.extras]
 all = ["flake8 (>=7.1.1)", "mypy (>=1.11.2)", "pytest (>=8.3.2)", "ruff (>=0.6.2)"]
+
+[[package]]
+name = "importlib-metadata"
+version = "8.7.1"
+description = "Read metadata from Python packages"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "importlib_metadata-8.7.1-py3-none-any.whl", hash = "sha256:5a1f80bf1daa489495071efbb095d75a634cf28a8bc299581244063b53176151"},
+    {file = "importlib_metadata-8.7.1.tar.gz", hash = "sha256:49fef1ae6440c182052f407c8d34a68f72efc36db9ca90dc0113398f2fdde8bb"},
+]
+
+[package.dependencies]
+zipp = ">=3.20"
+
+[package.extras]
+check = ["pytest-checkdocs (>=2.4)", "pytest-ruff (>=0.2.1) ; sys_platform != \"cygwin\""]
+cover = ["pytest-cov"]
+doc = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "rst.linker (>=1.9)", "sphinx (>=3.5)", "sphinx-lint"]
+enabler = ["pytest-enabler (>=3.4)"]
+perf = ["ipython"]
+test = ["flufl.flake8", "jaraco.test (>=5.4)", "packaging", "pyfakefs", "pytest (>=6,!=8.1.*)", "pytest-perf (>=0.9.2)"]
+type = ["mypy (<1.19) ; platform_python_implementation == \"PyPy\"", "pytest-mypy (>=1.0.1)"]
 
 [[package]]
 name = "jiter"
@@ -694,6 +752,18 @@ files = [
     {file = "jiter-0.13.0-graalpy312-graalpy250_312_native-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ab44b178f7981fcaea7e0a5df20e773c663d06ffda0198f1a524e91b2fde7e59"},
     {file = "jiter-0.13.0-graalpy312-graalpy250_312_native-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7bb00b6d26db67a05fe3e12c76edc75f32077fb51deed13822dc648fa373bc19"},
     {file = "jiter-0.13.0.tar.gz", hash = "sha256:f2839f9c2c7e2dffc1bc5929a510e14ce0a946be9365fd1219e7ef342dae14f4"},
+]
+
+[[package]]
+name = "logfire-api"
+version = "4.30.0"
+description = "Shim for the Logfire SDK which does nothing unless Logfire is installed"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "logfire_api-4.30.0-py3-none-any.whl", hash = "sha256:9138976dc30df4cf21617f1b188a84781683ef2ba88c46008774a7081f16f2c9"},
+    {file = "logfire_api-4.30.0.tar.gz", hash = "sha256:ab24c4283fbe90b0f275e59f69ce3b86712cbabec6aa7ae64f411e754c66e3fc"},
 ]
 
 [[package]]
@@ -889,6 +959,22 @@ files = [
 ]
 
 [[package]]
+name = "opentelemetry-api"
+version = "1.40.0"
+description = "OpenTelemetry Python API"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "opentelemetry_api-1.40.0-py3-none-any.whl", hash = "sha256:82dd69331ae74b06f6a874704be0cfaa49a1650e1537d4a813b86ecef7d0ecf9"},
+    {file = "opentelemetry_api-1.40.0.tar.gz", hash = "sha256:159be641c0b04d11e9ecd576906462773eb97ae1b657730f0ecf64d32071569f"},
+]
+
+[package.dependencies]
+importlib-metadata = ">=6.0,<8.8.0"
+typing-extensions = ">=4.5.0"
+
+[[package]]
 name = "playwright"
 version = "1.58.0"
 description = "A high-level API to automate web browsers"
@@ -1065,6 +1151,65 @@ email = ["email-validator (>=2.0.0)"]
 timezone = ["tzdata ; python_version >= \"3.9\" and platform_system == \"Windows\""]
 
 [[package]]
+name = "pydantic-ai-slim"
+version = "1.72.0"
+description = "Agent Framework / shim to use Pydantic with LLMs, slim package"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "pydantic_ai_slim-1.72.0-py3-none-any.whl", hash = "sha256:ccb84a890347571e6e3927ff49363aa98a3a5bbfdc42de2c8d3be9f673bbccc6"},
+    {file = "pydantic_ai_slim-1.72.0.tar.gz", hash = "sha256:feb409a37a868eae300adc6110ed455b74f45e80c37094dd6926b36585c761e1"},
+]
+
+[package.dependencies]
+anthropic = {version = ">=0.80.0", optional = true, markers = "extra == \"anthropic\""}
+genai-prices = ">=0.0.48"
+griffelib = ">=2.0"
+httpx = ">=0.27"
+opentelemetry-api = ">=1.28.0"
+pydantic = ">=2.12"
+pydantic-graph = "1.72.0"
+typing-inspection = ">=0.4.0"
+
+[package.extras]
+a2a = ["fasta2a (>=0.4.1)"]
+ag-ui = ["ag-ui-protocol (>=0.1.10)", "starlette (>=0.45.3)"]
+anthropic = ["anthropic (>=0.80.0)"]
+bedrock = ["boto3 (>=1.42.14)"]
+cli = ["argcomplete (>=3.5.0)", "prompt-toolkit (>=3)", "pyperclip (>=1.9.0)", "pyyaml (>=6.0.2)", "rich (>=13)"]
+cohere = ["cohere (>=5.20.6) ; platform_system != \"Emscripten\""]
+dbos = ["dbos (>=2.10.0)"]
+duckduckgo = ["ddgs (>=9.0.0)"]
+evals = ["pydantic-evals (==1.72.0)"]
+exa = ["exa-py (>=2.0.0)"]
+fastmcp = ["fastmcp (>=2.14.0)"]
+google = ["google-genai (>=1.56.0)"]
+groq = ["groq (>=0.25.0)"]
+huggingface = ["huggingface-hub (>=1.3.4,<2.0.0)"]
+logfire = ["logfire[httpx] (>=4.16.0)"]
+mcp = ["mcp (>=1.25.0,<2.0)"]
+mistral = ["mistralai (>=1.9.11)"]
+openai = ["openai (>=2.29.0)", "tiktoken (>=0.12.0)"]
+openrouter = ["openai (>=2.8.0)"]
+outlines-llamacpp = ["outlines[llamacpp] (>=1.0.0,<1.3.0) ; python_version < \"3.14\""]
+outlines-mlxlm = ["outlines[mlxlm] (>=1.0.0,<1.3.0) ; python_version < \"3.14\" and platform_system == \"Darwin\" and platform_machine == \"arm64\""]
+outlines-sglang = ["outlines[sglang] (>=1.0.0,<1.3.0) ; python_version < \"3.14\"", "pillow (>=12.1.1) ; python_version < \"3.14\""]
+outlines-transformers = ["outlines[transformers] (>=1.0.0,<1.3.0) ; python_version < \"3.14\" and (sys_platform != \"darwin\" or platform_machine != \"x86_64\")", "pillow (>=12.1.1) ; python_version < \"3.14\"", "torch (>=2.8.0) ; python_version < \"3.14\" and (sys_platform != \"darwin\" or platform_machine != \"x86_64\")", "transformers (>=4.0.0) ; python_version < \"3.14\""]
+outlines-vllm-offline = ["outlines (>=1.0.0,<1.3.0) ; python_version < \"3.14\"", "torch (>=2.8.0) ; python_version < \"3.14\" and (sys_platform != \"darwin\" or platform_machine != \"x86_64\")", "vllm (>=0.15.0) ; python_version < \"3.12\" and (sys_platform != \"darwin\" or platform_machine != \"x86_64\")"]
+prefect = ["prefect (>=3.4.21)"]
+retries = ["tenacity (>=8.2.3)"]
+sentence-transformers = ["sentence-transformers (>=5.2.0) ; python_version < \"3.14\""]
+spec = ["pydantic-handlebars (>=0.1.0)", "pyyaml (>=6.0.2)"]
+tavily = ["tavily-python (>=0.5.0)"]
+temporal = ["temporalio (==1.20.0)"]
+ui = ["starlette (>=0.45.3)"]
+vertexai = ["google-auth (>=2.36.0)", "requests (>=2.32.2)"]
+voyageai = ["voyageai (>=0.3.7) ; python_version < \"3.14\""]
+web = ["httpx (>=0.27.0)", "starlette (>=0.45.3)", "uvicorn (>=0.38.0)"]
+xai = ["xai-sdk (>=1.5.0)"]
+
+[[package]]
 name = "pydantic-core"
 version = "2.41.5"
 description = "Core functionality for Pydantic validation and serialization"
@@ -1197,6 +1342,24 @@ files = [
 
 [package.dependencies]
 typing-extensions = ">=4.14.1"
+
+[[package]]
+name = "pydantic-graph"
+version = "1.72.0"
+description = "Graph and state machine library"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "pydantic_graph-1.72.0-py3-none-any.whl", hash = "sha256:d1c953d7395ff53b74c3e3b8b4cfac8d8ba06d32fc656ebae9363b2ade8598b0"},
+    {file = "pydantic_graph-1.72.0.tar.gz", hash = "sha256:8970cc4cd4ba396976d4b4aa0ba5dcc9a0efeeac01a1a9253c7a8d90a4590046"},
+]
+
+[package.dependencies]
+httpx = ">=0.27"
+logfire-api = ">=3.14.1"
+pydantic = ">=2.12"
+typing-inspection = ">=0.4.0"
 
 [[package]]
 name = "pyee"
@@ -1474,7 +1637,27 @@ idna = ">=2.0"
 multidict = ">=4.0"
 propcache = ">=0.2.1"
 
+[[package]]
+name = "zipp"
+version = "3.23.0"
+description = "Backport of pathlib-compatible object wrapper for zip files"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "zipp-3.23.0-py3-none-any.whl", hash = "sha256:071652d6115ed432f5ce1d34c336c0adfd6a884660d1e9712a256d3d3bd4b14e"},
+    {file = "zipp-3.23.0.tar.gz", hash = "sha256:a07157588a12518c9d4034df3fbbee09c814741a33ff63c05fa29d26a2404166"},
+]
+
+[package.extras]
+check = ["pytest-checkdocs (>=2.4)", "pytest-ruff (>=0.2.1) ; sys_platform != \"cygwin\""]
+cover = ["pytest-cov"]
+doc = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "rst.linker (>=1.9)", "sphinx (>=3.5)", "sphinx-lint"]
+enabler = ["pytest-enabler (>=2.2)"]
+test = ["big-O", "jaraco.functools", "jaraco.itertools", "jaraco.test", "more_itertools", "pytest (>=6,!=8.1.*)", "pytest-ignore-flaky"]
+type = ["pytest-mypy"]
+
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.14"
-content-hash = "a8fe9d1c5d2f61a86bf845dcdabbda65e7a87605a08736cc649f6e09e8657b62"
+content-hash = "61cc89b32188dd75c242507241d91fa78878a15e00cddba7dca64cb083a716b1"

@@ -102,6 +102,16 @@ docker-compose up --build -d
 
 The container runs 24/7 and fires the pipeline once a day at `SCRAPE_TIME`.
 
+### 4. Open the job UI
+
+Once the stack is up, visit:
+
+```text
+http://localhost:8080
+```
+
+Use the filters to slice the jobs table and update the `status` field.
+
 ---
 
 ## LinkedIn login (optional)

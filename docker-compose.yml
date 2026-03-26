@@ -12,3 +12,14 @@ services:
     restart: unless-stopped
     # Keeps container alive; CRON runs inside via schedule library
     command: python main.py
+
+  job-ui:
+    build: ./ui
+    container_name: job-ui
+    environment:
+      - DB_PATH=/app/db/jobs.sqlite
+    volumes:
+      - ./db:/app/db
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
