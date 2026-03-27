@@ -91,6 +91,8 @@ Edit `.env` (make sure to add your LLM provider API key):
 | `MIN_FIT_SCORE`          | Minimum score to include in digest (default: 6)                       |
 | `SCRAPE_TIME`            | Daily run time in 24h format (default: `08:00`)                       |
 | `LINKEDIN_STORAGE_STATE` | Path to saved LinkedIn session (default: `.auth/linkedin_state.json`) |
+| `LINKEDIN_USERNAME`      | LinkedIn login email/username (required for headless login)           |
+| `LINKEDIN_PASSWORD`      | LinkedIn login password (required for headless login)                 |
 
 ### 2. Update your resume variants
 
@@ -130,12 +132,17 @@ LinkedIn scraping can work without login (public listings only). LinkedIn People
 search (outreach) requires login. Save a session once and reuse it:
 
 ```bash
+# Headless by default (uses LINKEDIN_USERNAME / LINKEDIN_PASSWORD)
 python scraper/linkedin.py --login
+
+# Interactive login with visible browser
+python scraper/linkedin.py --login --headful
 ```
 
-When the browser opens, complete the login, then return to the terminal and
-press Enter. A session file will be saved to `.auth/linkedin_state.json` (or
-the path set by `LINKEDIN_STORAGE_STATE`).
+Headless login requires `LINKEDIN_USERNAME` and `LINKEDIN_PASSWORD` in your
+`.env`. Interactive mode will open a browser; complete the login, then return
+to the terminal and press Enter. A session file will be saved to
+`.auth/linkedin_state.json` (or the path set by `LINKEDIN_STORAGE_STATE`).
 
 ---
 

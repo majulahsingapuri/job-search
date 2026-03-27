@@ -11,7 +11,9 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from rich.console import Console
+from dotenv import load_dotenv
 
+load_dotenv()
 console = Console()
 
 LINKEDIN_BASE = "https://www.linkedin.com/jobs/search"
@@ -78,23 +80,51 @@ async def _goto_with_login_fallback(
     return page, context, used_state
 
 
-async def login_linkedin() -> None:
+async def login_linkedin(headless: bool = True) -> None:
     storage_state = _get_storage_state_path()
     storage_state.parent.mkdir(parents=True, exist_ok=True)
+    username = os.getenv("LINKEDIN_USERNAME", "").strip()
+    password = os.getenv("LINKEDIN_PASSWORD", "").strip()
+
+    if headless and (not username or not password):
+        console.log(
+            "[red]LinkedIn login: headless mode requires LINKEDIN_USERNAME and "
+            "LINKEDIN_PASSWORD. Re-run with --headful for interactive login.[/red]"
+        )
+        return
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=False, args=["--no-sandbox", "--disable-dev-shm-usage"]
+            headless=headless, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
         context = await browser.new_context(user_agent=USER_AGENT)
         page = await context.new_page()
 
         console.log("[cyan]LinkedIn:[/cyan] Opening login page...")
         await page.goto(LINKEDIN_LOGIN_URL, wait_until="domcontentloaded")
-        console.log(
-            "[cyan]LinkedIn:[/cyan] Complete login in the browser, then press Enter here."
-        )
-        input()
+        if headless:
+            await page.fill(
+                "input[name='session_key'], input#username", username, timeout=10000
+            )
+            await page.fill(
+                "input[name='session_password'], input#password",
+                password,
+                timeout=10000,
+            )
+            await page.click("button[type='submit']", timeout=10000)
+            await page.wait_for_timeout(5000)
+            if await _is_login_page(page):
+                console.log(
+                    "[red]LinkedIn login failed in headless mode. "
+                    "If you have MFA, use --headful to login interactively.[/red]"
+                )
+                await browser.close()
+                return
+        else:
+            console.log(
+                "[cyan]LinkedIn:[/cyan] Complete login in the browser, then press Enter here."
+            )
+            input()
 
         await context.storage_state(path=str(storage_state))
         await browser.close()
@@ -250,4 +280,5 @@ async def enrich_job_descriptions(jobs: list[dict], context) -> list[dict]:
 
 if __name__ == "__main__":
     if "--login" in sys.argv:
-        asyncio.run(login_linkedin())
+        headful = "--headful" in sys.argv
+        asyncio.run(login_linkedin(headless=not headful))
