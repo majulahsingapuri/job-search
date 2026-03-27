@@ -220,12 +220,17 @@ def send_digest() -> dict:
 
     if not smtp_user or not smtp_pass:
         console.log("[red]Notifier: SMTP_USER or SMTP_PASS not set — skipping.[/red]")
-        return {"sent": False, "job_count": 0, "error": "SMTP credentials missing"}
+        return {
+            "sent": False,
+            "job_count": 0,
+            "error": "SMTP credentials missing",
+            "jobs": [],
+        }
 
     jobs = get_unnotified_jobs(min_fit_score=min_score)
     if not jobs:
         console.log("[dim]Notifier: nothing new above threshold.[/dim]")
-        return {"sent": False, "job_count": 0, "error": None}
+        return {"sent": False, "job_count": 0, "error": None, "jobs": []}
 
     date_str = datetime.now().strftime("%A, %B %d %Y")
     strong = sum(1 for j in jobs if (j["fit_score"] or 0) >= 7)
@@ -252,12 +257,12 @@ def send_digest() -> dict:
 
         mark_notified([j["id"] for j in jobs])
         console.log(f"[green]✓ Digest sent to {notify_to}[/green]")
-        return {"sent": True, "job_count": len(jobs), "error": None}
+        return {"sent": True, "job_count": len(jobs), "error": None, "jobs": jobs}
 
     except smtplib.SMTPAuthenticationError:
         err = "SMTP auth failed — double-check SMTP_USER / SMTP_PASS"
         console.log(f"[red]{err}[/red]")
-        return {"sent": False, "job_count": 0, "error": err}
+        return {"sent": False, "job_count": 0, "error": err, "jobs": []}
     except Exception as e:
         console.log(f"[red]Notifier error: {e}[/red]")
         return {"sent": False, "job_count": len(jobs), "error": str(e)}

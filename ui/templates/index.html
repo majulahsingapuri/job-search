@@ -258,6 +258,59 @@
         text-decoration: none;
       }
 
+      .outreach-log {
+        margin: 8px 0 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .outreach-log li {
+        display: grid;
+        gap: 4px;
+        padding: 8px 10px;
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+        background: #faf9f7;
+        font-size: 0.85rem;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .tag-sent {
+        background: rgba(16, 185, 129, 0.15);
+        color: #047857;
+        border: 1px solid rgba(16, 185, 129, 0.4);
+      }
+
+      .tag-skipped {
+        background: rgba(234, 179, 8, 0.15);
+        color: #b45309;
+        border: 1px solid rgba(234, 179, 8, 0.4);
+      }
+
+      .tag-failed {
+        background: rgba(239, 68, 68, 0.15);
+        color: #b91c1c;
+        border: 1px solid rgba(239, 68, 68, 0.4);
+      }
+
+      .muted-inline {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
       @media (max-width: 900px) {
         header,
         .wrap {
@@ -519,6 +572,35 @@
                   {% for person in job['people_links'] %}
                   <li>
                     <a href="{{ person.url }}" target="_blank" rel="noreferrer">{{ person.query }}</a>
+                  </li>
+                  {% endfor %}
+                </ul>
+                {% endif %}
+                {% if job['outreach_total'] %}
+                <p>
+                  <strong>Outreach log:</strong>
+                  {{ job['outreach_sent'] }}/{{ job['outreach_total'] }} sent
+                </p>
+                <ul class="outreach-log">
+                  {% for entry in job['outreach_log'] %}
+                  <li>
+                    <span class="tag tag-{{ entry['status'] }}">{{ entry['status'] }}</span>
+                    {% if entry['profile_url'] %}
+                    <a href="{{ entry['profile_url'] }}" target="_blank" rel="noreferrer">
+                      {{ entry['person_name'] or entry['profile_url'] }}
+                    </a>
+                    {% else %}
+                    <span>{{ entry['person_name'] or 'Unknown profile' }}</span>
+                    {% endif %}
+                    <span class="muted-inline">
+                      {{ entry['query_type'] or 'query' }}
+                      {% if entry['query_text'] %}
+                      · {{ entry['query_text'] }}
+                      {% endif %}
+                    </span>
+                    {% if entry['reason'] %}
+                    <span class="muted-inline">Reason: {{ entry['reason'] }}</span>
+                    {% endif %}
                   </li>
                   {% endfor %}
                 </ul>

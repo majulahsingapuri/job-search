@@ -116,7 +116,9 @@ def build_linkedin_url(keyword: str, location: str) -> str:
     return f"{LINKEDIN_BASE}?{urllib.parse.urlencode(params)}"
 
 
-async def scrape_linkedin(keywords: list[str], location: str) -> list[dict]:
+async def scrape_linkedin(
+    keywords: list[str], location: str, headless: bool = True
+) -> list[dict]:
     """
     Returns a list of job dicts:
     {title, company, location, url, source, description}
@@ -125,7 +127,7 @@ async def scrape_linkedin(keywords: list[str], location: str) -> list[dict]:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
+            headless=headless, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
         storage_state = _get_storage_state_path()
         context, used_state = await _create_context(browser, storage_state)

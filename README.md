@@ -2,7 +2,7 @@
 
 Scrapes job boards daily, scores each role against your profile using Claude,
 picks the right resume variant, drafts a LinkedIn outreach note, and delivers
-everything to your inbox as a ranked digest.
+everything to your inbox as a ranked digest, then runs LinkedIn outreach.
 
 ---
 
@@ -29,6 +29,12 @@ CRON (daily @ SCRAPE_TIME)
 │  Stage 3: Digest    │  HTML + plaintext email via Porkbun SMTP
 │                     │  Jobs ranked by fit score, outreach ready to copy
 └─────────────────────┘
+         │ emailed jobs
+         ▼
+┌─────────────────────┐
+│ Stage 4: Outreach   │  LinkedIn People search + connect + note
+│                     │  Logs outreach + updates job status
+└─────────────────────┘
 ```
 
 ---
@@ -50,6 +56,7 @@ job-search/
 ├── agent/
 │   ├── routing_agent.py     # Claude scoring + outreach drafting
 │   └── pipeline.py          # Batch runner for routing agent
+│   └── linkedin_outreach.py # LinkedIn People outreach automation
 ├── notifier/
 │   └── digest.py            # HTML email builder + SMTP sender
 ├── config/
@@ -68,13 +75,16 @@ job-search/
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` (make sure to add your LLM provider API key):
 
 | Variable                 | What to set                                                           |
 |--------------------------|-----------------------------------------------------------------------|
-| `ANTHROPIC_API_KEY`      | Your Anthropic API key                                                |
-| `SMTP_USER`              | `your@yourdomain.com` (Porkbun email address)                         |
-| `SMTP_PASS`              | Porkbun email password                                                |
+| `ANTHROPIC_API_KEY`      | your anthropic api key                                                |
+| `LLM_MODEL`              | LLM model name (default: `claude-4-sonnet-20250514`)                  |
+| `SMTP_HOST`              | SMTP server host (default: `smtp.porkbun.com`)                        |
+| `SMTP_PORT`              | SMTP server port (default: `587`)                                     |
+| `SMTP_USER`              | SMTP account username/email                                           |
+| `SMTP_PASS`              | SMTP account password                                                 |
 | `NOTIFY_TO`              | Where to send digests (can be same as SMTP_USER)                      |
 | `JOB_KEYWORDS`           | Comma-separated search terms                                          |
 | `JOB_LOCATION`           | e.g. `Boston, MA`                                                     |
@@ -114,10 +124,10 @@ Use the filters to slice the jobs table and update the `status` field.
 
 ---
 
-## LinkedIn login (optional)
+## LinkedIn login (recommended)
 
-By default, LinkedIn scraping works without login (public listings only). To
-access more listings, save a session once and reuse it:
+LinkedIn scraping can work without login (public listings only). LinkedIn People
+search (outreach) requires login. Save a session once and reuse it:
 
 ```bash
 python scraper/linkedin.py --login
@@ -129,7 +139,9 @@ the path set by `LINKEDIN_STORAGE_STATE`).
 
 ---
 
-## Commands
+## Commands (by phase)
+
+### Phase 1: Scrape + Score + Digest
 
 ```bash
 # Run full pipeline right now (scrape + score + email)
@@ -140,7 +152,21 @@ docker-compose run --rm job-search python main.py --score-only
 
 # Just send the digest (jobs already scored)
 docker-compose run --rm job-search python main.py --digest-only
+```
 
+### Phase 2: Outreach
+
+```bash
+# Run outreach only for today's scraped jobs
+docker-compose run --rm job-search python main.py --outreach-only
+
+# Show the browser for any stage that uses Playwright
+docker-compose run --rm job-search python main.py --now --headful
+```
+
+### Phase 3: Inspect + Debug
+
+```bash
 # Browse unscored jobs
 docker-compose run --rm job-search python inspect_db.py
 
@@ -171,7 +197,18 @@ For each role above your `MIN_FIT_SCORE`:
 
 ---
 
+## Outreach logging
+
+Outreach attempts are stored in the `outreach_log` table in SQLite and shown in
+the UI under each job. Each LinkedIn profile is only contacted once across all
+roles.
+
+---
+
 ## Porkbun SMTP settings
+
+If you're not using Porkbun, set `SMTP_HOST` and `SMTP_PORT` in `.env` for your
+provider and ignore this section.
 
 | Setting  | Value                   |
 |----------|-------------------------|
@@ -190,6 +227,7 @@ email dashboard and use that as `SMTP_PASS`.
 
 - LinkedIn scraping works without login (public listings only). If LinkedIn
   updates their markup, update CSS selectors in `scraper/linkedin.py`.
+- LinkedIn outreach uses People search filters and requires a logged-in session.
 - Simplify.jobs scraping uses the Typesense API (no browser/DOM selectors).
 - HN scraping uses the official Algolia API — very stable, no browser needed.
 - Claude API calls are batched (default 3 concurrent) to stay within rate limits.

@@ -266,6 +266,30 @@ def _build_page_links(args: dict, page: int, total_pages: int) -> dict:
     return {"prev": prev_url, "next": next_url}
 
 
+def _get_outreach_logs(job_ids: list[str]) -> dict[str, list[dict]]:
+    if not job_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(job_ids))
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM outreach_log
+                WHERE job_id IN ({placeholders})
+                ORDER BY created_at DESC
+                """,
+                job_ids,
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        d = dict(r)
+        out.setdefault(d.get("job_id") or "", []).append(d)
+    return out
+
+
 @app.get("/")
 def index():
     filters = _parse_filters(request.args)
@@ -279,9 +303,18 @@ def index():
         request.args.to_dict(flat=False), page, total_pages
     )
 
+    job_ids = [row["id"] for row in jobs]
+    outreach_map = _get_outreach_logs(job_ids)
+
     jobs_out = []
     for row in jobs:
         data = dict(row)
+        outreach_logs = outreach_map.get(data.get("id") or "", [])
+        data["outreach_log"] = outreach_logs
+        data["outreach_total"] = len(outreach_logs)
+        data["outreach_sent"] = sum(
+            1 for o in outreach_logs if o.get("status") == "sent"
+        )
         people_links = []
         raw_people = data.get("people_to_reach") or ""
         if raw_people:

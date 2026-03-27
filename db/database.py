@@ -44,6 +44,21 @@ def init_db():
                 notified         INTEGER DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS outreach_log (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id       TEXT,
+                job_title    TEXT,
+                company      TEXT,
+                query_type   TEXT,
+                query_text   TEXT,
+                person_name  TEXT,
+                profile_url  TEXT NOT NULL UNIQUE,
+                status       TEXT,
+                reason       TEXT,
+                note_text    TEXT,
+                created_at   TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS scrape_runs (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_at     TEXT NOT NULL,
@@ -69,6 +84,24 @@ def _migrate():
         for col, col_type in new_cols:
             if col not in existing:
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {col_type}")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS outreach_log (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id       TEXT,
+                job_title    TEXT,
+                company      TEXT,
+                query_type   TEXT,
+                query_text   TEXT,
+                person_name  TEXT,
+                profile_url  TEXT NOT NULL UNIQUE,
+                status       TEXT,
+                reason       TEXT,
+                note_text    TEXT,
+                created_at   TEXT NOT NULL
+            )
+        """
+        )
 
 
 def make_job_id(title: str, company: str, url: str) -> str:
@@ -178,3 +211,77 @@ def mark_notified(job_ids: list[str]):
         conn.executemany(
             "UPDATE jobs SET notified=1 WHERE id=?", [(j,) for j in job_ids]
         )
+
+
+def get_jobs_scraped_on(date_str: str) -> list[dict]:
+    date_from = date_str
+    date_to = f"{date_str}T23:59:59"
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM jobs
+            WHERE date_found >= ? AND date_found <= ? AND fit_score >= 8.5
+            ORDER BY date_found DESC
+            """,
+            (date_from, date_to),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_job_status(job_id: str, status: str):
+    with get_connection() as conn:
+        conn.execute("UPDATE jobs SET status=? WHERE id=?", (status, job_id))
+
+
+def has_outreach_profile(profile_url: str) -> bool:
+    if not profile_url:
+        return False
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM outreach_log WHERE profile_url=?",
+            (profile_url,),
+        ).fetchone()
+        return row is not None
+
+
+def insert_outreach_log(
+    job_id: str | None,
+    job_title: str | None,
+    company: str | None,
+    query_type: str | None,
+    query_text: str | None,
+    person_name: str | None,
+    profile_url: str,
+    status: str | None,
+    reason: str | None,
+    note_text: str | None,
+    created_at: str,
+) -> bool:
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO outreach_log (
+                    job_id, job_title, company, query_type, query_text,
+                    person_name, profile_url, status, reason, note_text, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    job_id,
+                    job_title,
+                    company,
+                    query_type,
+                    query_text,
+                    person_name,
+                    profile_url,
+                    status,
+                    reason,
+                    note_text,
+                    created_at,
+                ),
+            )
+        return True
+    except sqlite3.IntegrityError:
+        return False

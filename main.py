@@ -7,6 +7,7 @@ Usage:
     python main.py --now         # Run full pipeline once, then exit
     python main.py --score-only  # Skip scraping, score unscored jobs, send digest
     python main.py --digest-only # Skip scraping + scoring, just send digest
+    python main.py --outreach-only --headful  # Outreach with visible browser
     python main.py --linkedin    # Run only LinkedIn scraper
     python main.py --simplify    # Run only Simplify scraper
     python main.py --hn          # Run only HN Hiring scraper
@@ -24,11 +25,12 @@ from rich.table import Table
 
 load_dotenv()
 
-from db.database import init_db, insert_job, log_scrape_run
+from db.database import init_db, insert_job, log_scrape_run, get_jobs_scraped_on
 from scraper.linkedin import scrape_linkedin
 from scraper.simplify import scrape_simplify
 from scraper.hn import scrape_hn
 from agent.pipeline import run_routing_pipeline
+from agent.linkedin_outreach import run_linkedin_outreach
 from notifier.digest import send_digest
 
 console = Console()
@@ -63,12 +65,16 @@ def _parse_selected_scrapers(argv: list[str]) -> list[str]:
     return selected or ["linkedin", "simplify", "hn"]
 
 
-async def _scrape_stage(selected: list[str]) -> int:
+async def _scrape_stage(selected: list[str], headful: bool = False) -> int:
     tasks = []
     ordered = []
     if "linkedin" in selected:
         ordered.append("linkedin")
-        tasks.append(_run_scraper("linkedin", scrape_linkedin(KEYWORDS, LOCATION)))
+        tasks.append(
+            _run_scraper(
+                "linkedin", scrape_linkedin(KEYWORDS, LOCATION, headless=not headful)
+            )
+        )
     if "simplify" in selected:
         ordered.append("simplify")
         tasks.append(_run_scraper("simplify", scrape_simplify(KEYWORDS)))
@@ -106,13 +112,18 @@ async def _scrape_stage(selected: list[str]) -> int:
 
 
 async def run_pipeline(
-    skip_scrape: bool = False, skip_score: bool = False, selected: list[str] | None = None
+    skip_scrape: bool = False,
+    skip_score: bool = False,
+    selected: list[str] | None = None,
+    headful: bool = False,
 ):
     console.rule(f"[bold blue]Job Agent — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
     # ── Stage 1: Scrape ───────────────────────────────────────────────────────
     if not skip_scrape:
-        total_new = await _scrape_stage(selected or ["linkedin", "simplify", "hn"])
+        total_new = await _scrape_stage(
+            selected or ["linkedin", "simplify", "hn"], headful=headful
+        )
         if total_new == 0 and not skip_score:
             console.log("[yellow]No new jobs scraped.[/yellow]")
             # Still fall through to digest in case there are unnotified scored jobs
@@ -126,11 +137,27 @@ async def run_pipeline(
     if result["error"]:
         console.log(f"[red]Digest error: {result['error']}[/red]")
 
+    if result.get("sent") and result.get("jobs"):
+        console.log("[cyan]LinkedIn:[/cyan] Starting outreach stage...")
+        await run_linkedin_outreach(result["jobs"], headless=not headful)
+
     console.rule("[dim]Done[/dim]")
 
 
-def run_pipeline_sync(selected: list[str]):
-    asyncio.run(run_pipeline(selected=selected))
+def run_pipeline_sync(selected: list[str], headful: bool = False):
+    asyncio.run(run_pipeline(selected=selected, headful=headful))
+
+
+async def run_outreach_today(headful: bool = False) -> None:
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    jobs = get_jobs_scraped_on(today_str)
+    if not jobs:
+        console.log(f"[yellow]No scored jobs found for {today_str}.[/yellow]")
+        return
+    console.log(
+        f"[cyan]LinkedIn:[/cyan] Running outreach for {len(jobs)} jobs from {today_str}"
+    )
+    await run_linkedin_outreach(jobs, headless=not headful)
 
 
 if __name__ == "__main__":
@@ -142,26 +169,50 @@ if __name__ == "__main__":
     console.log(f"  Schedule : daily at {SCRAPE_TIME}")
     console.log(f"  Scrapers : {', '.join(SELECTED_SCRAPERS)}")
 
+    headful = "--headful" in sys.argv or "--outreach-headful" in sys.argv
+
     if "--digest-only" in sys.argv:
         console.log(
             "[yellow]--digest-only: sending digest of already-scored jobs[/yellow]"
         )
-        asyncio.run(run_pipeline(skip_scrape=True, skip_score=True, selected=SELECTED_SCRAPERS))
+        asyncio.run(
+            run_pipeline(
+                skip_scrape=True,
+                skip_score=True,
+                selected=SELECTED_SCRAPERS,
+                headful=headful,
+            )
+        )
+        sys.exit(0)
+
+    if "--outreach-only" in sys.argv:
+        console.log(
+            "[yellow]--outreach-only: running LinkedIn outreach for today's jobs[/yellow]"
+        )
+        asyncio.run(run_outreach_today(headful=headful))
         sys.exit(0)
 
     if "--score-only" in sys.argv:
         console.log(
             "[yellow]--score-only: scoring unscored jobs then sending digest[/yellow]"
         )
-        asyncio.run(run_pipeline(skip_scrape=True, selected=SELECTED_SCRAPERS))
+        asyncio.run(
+            run_pipeline(
+                skip_scrape=True,
+                selected=SELECTED_SCRAPERS,
+                headful=headful,
+            )
+        )
         sys.exit(0)
 
     if "--now" in sys.argv:
         console.log("[yellow]--now: running full pipeline immediately[/yellow]")
-        asyncio.run(run_pipeline(selected=SELECTED_SCRAPERS))
+        asyncio.run(run_pipeline(selected=SELECTED_SCRAPERS, headful=headful))
         sys.exit(0)
 
-    schedule.every().day.at(SCRAPE_TIME).do(run_pipeline_sync, SELECTED_SCRAPERS)
+    schedule.every().day.at(SCRAPE_TIME).do(
+        run_pipeline_sync, SELECTED_SCRAPERS, headful
+    )
     console.log(f"[green]Scheduler running. Next run at {SCRAPE_TIME}[/green]")
     while True:
         schedule.run_pending()
