@@ -1,650 +1,300 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Job Tracker</title>
-    <style>
-      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&family=Source+Serif+4:wght@400;600&display=swap");
+{% extends "base.html" %}
 
-      :root {
-        --bg: #f3f1ee;
-        --panel: #ffffff;
-        --ink: #1c1c1c;
-        --muted: #6b6b6b;
-        --accent: #0f766e;
-        --accent-2: #f59e0b;
-        --border: #e5e2dd;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        font-family: "Space Grotesk", "Segoe UI", sans-serif;
-        color: var(--ink);
-        background: radial-gradient(1200px 600px at 10% -10%, #fef3c7, transparent),
-          radial-gradient(1200px 600px at 110% 0%, #ccfbf1, transparent),
-          var(--bg);
-      }
-
-      header {
-        padding: 24px 32px 8px;
-      }
-
-      h1 {
-        margin: 0 0 4px 0;
-        font-weight: 600;
-        letter-spacing: -0.02em;
-      }
-
-      .subtitle {
-        color: var(--muted);
-        margin: 0;
-      }
-
-      .wrap {
-        padding: 16px 32px 40px;
-      }
-
-      .panel {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 16px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
-      }
-
-      .filters {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 12px;
-        align-items: end;
-      }
-
-      label {
-        display: block;
-        font-size: 0.85rem;
-        color: var(--muted);
-        margin-bottom: 6px;
-      }
-
-      input,
-      select {
-        width: 100%;
-        padding: 8px 10px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        font-family: inherit;
-        background: #fff;
-      }
-
-      .checklist {
-        display: grid;
-        gap: 6px;
-        padding: 8px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: #fff;
-        max-height: 160px;
-        overflow-y: auto;
-      }
-
-      .checklist label {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        font-size: 0.85rem;
-        color: var(--ink);
-        margin: 0;
-      }
-
-      .checklist input {
-        width: auto;
-      }
-
-      .actions {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-      }
-
-      button,
-      .ghost {
-        padding: 8px 12px;
-        border-radius: 10px;
-        border: 1px solid var(--border);
-        font-weight: 600;
-        cursor: pointer;
-        background: var(--accent);
-        color: #fff;
-        text-decoration: none;
-        display: inline-block;
-      }
-
-      .ghost {
-        background: #fff;
-        color: var(--ink);
-      }
-
-      .meta {
-        margin: 12px 0 0;
-        color: var(--muted);
-        font-size: 0.9rem;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 16px;
-        font-size: 0.95rem;
-      }
-
-      th,
-      td {
-        border-bottom: 1px solid var(--border);
-        padding: 10px 8px;
-        text-align: left;
-        vertical-align: top;
-      }
-
-      th {
-        font-size: 0.8rem;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-
-      .title {
-        font-family: "Source Serif 4", serif;
-        font-weight: 600;
-      }
-
-      .sort-link {
-        display: inline-flex;
-        gap: 6px;
-        align-items: center;
-        padding: 2px 6px;
-        border-radius: 999px;
-        border: 1px solid transparent;
-        text-decoration: none;
-        color: inherit;
-      }
-
-      .sort-link:hover {
-        border-color: var(--border);
-        background: #faf9f7;
-      }
-
-      .sort-state {
-        font-size: 0.7rem;
-        color: var(--muted);
-        text-transform: lowercase;
-      }
-
-      .status-pill {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 999px;
-        background: #f4f4f4;
-        font-size: 0.8rem;
-        margin-bottom: 6px;
-      }
-
-      details {
-        margin-top: 6px;
-      }
-
-      details summary {
-        cursor: pointer;
-        color: var(--accent);
-        font-weight: 600;
-      }
-
-      .fit {
-        font-weight: 600;
-        color: var(--accent-2);
-      }
-
-      .error {
-        padding: 10px 12px;
-        border-radius: 10px;
-        background: #fee2e2;
-        border: 1px solid #fecaca;
-        color: #991b1b;
-      }
-
-      .pager {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-top: 12px;
-        padding: 8px 12px;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: #fff;
-      }
-
-      .pager a {
-        text-decoration: none;
-        font-weight: 600;
-        color: var(--accent);
-      }
-
-      .pager .muted {
-        color: var(--muted);
-      }
-
-      .copy-btn {
-        margin-top: 6px;
-        padding: 6px 10px;
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        background: #fff;
-        font-weight: 600;
-        color: #000;
-        cursor: pointer;
-      }
-
-      .people-links {
-        margin: 6px 0 0;
-        padding-left: 16px;
-      }
-
-      .people-links a {
-        color: var(--accent);
-        text-decoration: none;
-      }
-
-      .outreach-log {
-        margin: 8px 0 0 0;
-        padding: 0;
-        list-style: none;
-        display: grid;
-        gap: 8px;
-      }
-
-      .outreach-log li {
-        display: grid;
-        gap: 4px;
-        padding: 8px 10px;
-        border: 1px dashed var(--border);
-        border-radius: 10px;
-        background: #faf9f7;
-        font-size: 0.85rem;
-      }
-
-      .tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 2px 8px;
-        border-radius: 999px;
-        font-size: 0.7rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-      }
-
-      .tag-sent {
-        background: rgba(16, 185, 129, 0.15);
-        color: #047857;
-        border: 1px solid rgba(16, 185, 129, 0.4);
-      }
-
-      .tag-skipped {
-        background: rgba(234, 179, 8, 0.15);
-        color: #b45309;
-        border: 1px solid rgba(234, 179, 8, 0.4);
-      }
-
-      .tag-failed {
-        background: rgba(239, 68, 68, 0.15);
-        color: #b91c1c;
-        border: 1px solid rgba(239, 68, 68, 0.4);
-      }
-
-      .muted-inline {
-        color: var(--muted);
-        font-size: 0.8rem;
-      }
-
-      @media (max-width: 900px) {
-        header,
-        .wrap {
-          padding: 16px;
-        }
-
-        table,
-        thead,
-        tbody,
-        th,
-        td,
-        tr {
-          display: block;
-        }
-
-        th {
-          display: none;
-        }
-
-        tr {
-          margin-bottom: 18px;
-          border: 1px solid var(--border);
-          border-radius: 12px;
-          padding: 10px;
-          background: #fff;
-        }
-
-        td {
-          border: none;
-          padding: 6px 0;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <header>
-      <h1>Job Tracker</h1>
-      <p class="subtitle">Filter, review, and update statuses from your SQLite pipeline.</p>
-    </header>
-
-    <div class="wrap">
-      <div class="panel">
-        <form class="filters" method="get">
-          {% if filters.sort %}
-          <input type="hidden" name="sort" value="{{ filters.sort }}" />
-          {% endif %}
-          {% if filters.sort_dir %}
-          <input type="hidden" name="dir" value="{{ filters.sort_dir }}" />
-          {% endif %}
-          <div>
-            <label for="status">Status</label>
-            <div class="checklist" id="status">
-              {% for s in statuses %}
-              <label>
-                <input type="checkbox" name="status" value="{{ s }}" {% if s in filters.statuses %}checked{% endif %} />
-                {{ s }}
-              </label>
-              {% endfor %}
-            </div>
-          </div>
-
-          <div>
-            <label for="source">Source</label>
-            <div class="checklist" id="source">
-              {% for s in sources %}
-              <label>
-                <input type="checkbox" name="source" value="{{ s }}" {% if s in filters.sources %}checked{% endif %} />
-                {{ s }}
-              </label>
-              {% endfor %}
-            </div>
-          </div>
-
-          <div>
-            <label for="location">Location</label>
-            <div class="checklist" id="location">
-              {% for loc in locations %}
-              <label>
-                <input type="checkbox" name="location" value="{{ loc }}" {% if loc in filters.locations %}checked{% endif %} />
-                {{ loc }}
-              </label>
-              {% endfor %}
-            </div>
-          </div>
-
-          <div>
-            <label for="q">Search</label>
-            <input id="q" name="q" placeholder="Title, company, location" value="{{ filters.q }}" />
-          </div>
-
-          <div>
-            <label for="min_fit_score">Min fit score</label>
-            <input
-              id="min_fit_score"
-              name="min_fit_score"
-              type="number"
-              min="0"
-              max="10"
-              step="0.1"
-              value="{{ filters.min_fit_score_raw }}"
-            />
-          </div>
-
-          <div>
-            <label for="date_from">Date from</label>
-            <input id="date_from" name="date_from" type="date" value="{{ filters.date_from }}" />
-          </div>
-
-          <div>
-            <label for="date_to">Date to</label>
-            <input id="date_to" name="date_to" type="date" value="{{ filters.date_to }}" />
-          </div>
-
-          <div class="actions">
-            <button type="submit">Apply</button>
-            <a class="ghost" href="/">Clear</a>
-          </div>
-        </form>
-
-        {% if error %}
-        <p class="error">Database error: {{ error }}</p>
-        {% else %}
-        <p class="meta">{{ total }} job{{ '' if total == 1 else 's' }} shown.</p>
-        {% if total_pages > 1 %}
-        <div class="pager">
-          <div>
-            {% if page_links.prev %}
-            <a href="{{ page_links.prev }}">Previous</a>
-            {% else %}
-            <span class="muted">Previous</span>
-            {% endif %}
-          </div>
-          <div class="muted">Page {{ page }} of {{ total_pages }}</div>
-          <div>
-            {% if page_links.next %}
-            <a href="{{ page_links.next }}">Next</a>
-            {% else %}
-            <span class="muted">Next</span>
-            {% endif %}
-          </div>
-        </div>
-        {% endif %}
-        {% endif %}
+{% block content %}
+<div class="panel">
+  <form class="filters" method="get">
+    {% if filters.sort %}
+    <input type="hidden" name="sort" value="{{ filters.sort }}" />
+    {% endif %}
+    {% if filters.sort_dir %}
+    <input type="hidden" name="dir" value="{{ filters.sort_dir }}" />
+    {% endif %}
+    <div>
+      <label for="status">Status</label>
+      <div class="checklist" id="status">
+        {% for s in statuses %}
+        <label>
+          <input type="checkbox" name="status" value="{{ s }}" {% if s in filters.statuses %}checked{% endif %} />
+          {{ s }}
+        </label>
+        {% endfor %}
       </div>
+    </div>
 
-      {% if not error %}
-      <table>
-        <thead>
-          <tr>
-            <th>
-              <a class="sort-link" href="{{ sort_links['date'].url }}">
-                Date
-                {% if sort_links['date'].state != 'none' %}
-                <span class="sort-state">{{ sort_links['date'].state }}</span>
-                {% endif %}
-              </a>
-            </th>
-            <th>
-              <a class="sort-link" href="{{ sort_links['company'].url }}">
-                Company
-                {% if sort_links['company'].state != 'none' %}
-                <span class="sort-state">{{ sort_links['company'].state }}</span>
-                {% endif %}
-              </a>
-            </th>
-            <th>
-              <a class="sort-link" href="{{ sort_links['title'].url }}">
-                Role
-                {% if sort_links['title'].state != 'none' %}
-                <span class="sort-state">{{ sort_links['title'].state }}</span>
-                {% endif %}
-              </a>
-            </th>
-            <th>
-              <a class="sort-link" href="{{ sort_links['location'].url }}">
-                Location
-                {% if sort_links['location'].state != 'none' %}
-                <span class="sort-state">{{ sort_links['location'].state }}</span>
-                {% endif %}
-              </a>
-            </th>
-            <th>
-              <a class="sort-link" href="{{ sort_links['source'].url }}">
-                Source
-                {% if sort_links['source'].state != 'none' %}
-                <span class="sort-state">{{ sort_links['source'].state }}</span>
-                {% endif %}
-              </a>
-            </th>
-            <th>
-              <a class="sort-link" href="{{ sort_links['fit'].url }}">
-                Fit
-                {% if sort_links['fit'].state != 'none' %}
-                <span class="sort-state">{{ sort_links['fit'].state }}</span>
-                {% endif %}
-              </a>
-            </th>
-            <th>
-              <a class="sort-link" href="{{ sort_links['status'].url }}">
-                Status
-                {% if sort_links['status'].state != 'none' %}
-                <span class="sort-state">{{ sort_links['status'].state }}</span>
-                {% endif %}
-              </a>
-            </th>
-            <th>Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for job in jobs %}
-          <tr>
-            <td>{{ job['date_found'][:10] if job['date_found'] else '' }}</td>
-            <td>{{ job['company'] }}</td>
-            <td class="title">
-              {% if job['url'] %}
-              <a href="{{ job['url'] }}" target="_blank" rel="noreferrer">{{ job['title'] }}</a>
-              {% else %}
-              {{ job['title'] }}
-              {% endif %}
-            </td>
-            <td>{{ job['location'] or '' }}</td>
-            <td>{{ job['source'] or '' }}</td>
-            <td class="fit">{{ '%.1f'|format(job['fit_score']) if job['fit_score'] is not none else '' }}</td>
-            <td>
-              <form method="post" action="/jobs/{{ job['id'] }}/status">
-                <input type="hidden" name="next" value="{{ next_url }}" />
-                <select name="status" class="status-select">
-                  {% for s in statuses %}
-                  <option value="{{ s }}" {% if job['status'] == s %}selected{% endif %}>{{ s }}</option>
-                  {% endfor %}
-                </select>
-              </form>
-            </td>
-            <td>
-              <details>
-                <summary>Notes</summary>
-                {% if job['fit_reasoning'] %}
-                <p><strong>Fit reasoning:</strong> {{ job['fit_reasoning'] }}</p>
-                {% endif %}
-                {% if job['resume_variant'] %}
-                <p><strong>Resume:</strong> {{ job['resume_variant'] }}</p>
-                {% endif %}
-                {% if job['resume_reasoning'] %}
-                <p><strong>Resume reasoning:</strong> {{ job['resume_reasoning'] }}</p>
-                {% endif %}
-                {% if job['outreach_draft'] %}
-                <p><strong>Outreach:</strong> {{ job['outreach_draft'] }}</p>
-                <button
-                  type="button"
-                  class="copy-btn"
-                  data-copy='{{ job["outreach_draft"]|tojson }}'
-                >
-                  Copy outreach
-                </button>
-                {% endif %}
-                {% if job['people_links'] %}
-                <p><strong>People to reach:</strong></p>
-                <ul class="people-links">
-                  {% for person in job['people_links'] %}
-                  <li>
-                    <a href="{{ person.url }}" target="_blank" rel="noreferrer">{{ person.query }}</a>
-                  </li>
-                  {% endfor %}
-                </ul>
-                {% endif %}
-                {% if job['outreach_total'] %}
-                <p>
-                  <strong>Outreach log:</strong>
-                  {{ job['outreach_sent'] }}/{{ job['outreach_total'] }} sent
-                </p>
-                <ul class="outreach-log">
-                  {% for entry in job['outreach_log'] %}
-                  <li>
-                    <span class="tag tag-{{ entry['status'] }}">{{ entry['status'] }}</span>
-                    {% if entry['profile_url'] %}
-                    <a href="{{ entry['profile_url'] }}" target="_blank" rel="noreferrer">
-                      {{ entry['person_name'] or entry['profile_url'] }}
-                    </a>
-                    {% else %}
-                    <span>{{ entry['person_name'] or 'Unknown profile' }}</span>
-                    {% endif %}
-                    <span class="muted-inline">
-                      {{ entry['query_type'] or 'query' }}
-                      {% if entry['query_text'] %}
-                      · {{ entry['query_text'] }}
-                      {% endif %}
-                    </span>
-                    {% if entry['reason'] %}
-                    <span class="muted-inline">Reason: {{ entry['reason'] }}</span>
-                    {% endif %}
-                  </li>
-                  {% endfor %}
-                </ul>
-                {% endif %}
-                {% if job['red_flags'] %}
-                <p><strong>Red flags:</strong> {{ job['red_flags'] }}</p>
-                {% endif %}
-              </details>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div>
+      <label for="source">Source</label>
+      <div class="checklist" id="source">
+        {% for s in sources %}
+        <label>
+          <input type="checkbox" name="source" value="{{ s }}" {% if s in filters.sources %}checked{% endif %} />
+          {{ s }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
+      <label for="location">Location</label>
+      <div class="checklist" id="location">
+        {% for loc in locations %}
+        <label>
+          <input type="checkbox" name="location" value="{{ loc }}" {% if loc in filters.locations %}checked{% endif %} />
+          {{ loc }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
+      <label for="q">Search</label>
+      <input id="q" name="q" placeholder="Title, company, location" value="{{ filters.q }}" />
+    </div>
+
+    <div>
+      <label for="min_fit_score">Min fit score</label>
+      <input
+        id="min_fit_score"
+        name="min_fit_score"
+        type="number"
+        min="0"
+        max="10"
+        step="0.1"
+        value="{{ filters.min_fit_score_raw }}"
+      />
+    </div>
+
+    <div>
+      <label for="date_from">Date from</label>
+      <input id="date_from" name="date_from" type="date" value="{{ filters.date_from }}" />
+    </div>
+
+    <div>
+      <label for="date_to">Date to</label>
+      <input id="date_to" name="date_to" type="date" value="{{ filters.date_to }}" />
+    </div>
+
+    <div class="actions">
+      <button type="submit">Apply</button>
+      <a class="ghost" href="/">Clear</a>
+    </div>
+  </form>
+
+  {% if error %}
+  <p class="error">Database error: {{ error }}</p>
+  {% else %}
+  <p class="meta">{{ total }} job{{ '' if total == 1 else 's' }} shown.</p>
+  {% if total_pages > 1 %}
+  <div class="pager">
+    <div>
+      {% if page_links.prev %}
+      <a href="{{ page_links.prev }}">Previous</a>
+      {% else %}
+      <span class="muted">Previous</span>
       {% endif %}
     </div>
-    <script>
-      document.querySelectorAll(".status-select").forEach((select) => {
-        select.addEventListener("change", () => {
-          select.form.submit();
-        });
-      });
+    <div class="muted">Page {{ page }} of {{ total_pages }}</div>
+    <div>
+      {% if page_links.next %}
+      <a href="{{ page_links.next }}">Next</a>
+      {% else %}
+      <span class="muted">Next</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
 
-      document.querySelectorAll(".copy-btn").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const raw = button.dataset.copy || "\"\"";
-          let text = "";
-          try {
-            text = JSON.parse(raw);
-          } catch {
-            text = "";
-          }
+{% if not error %}
+<table>
+  <thead>
+    <tr>
+      <th>
+        <a class="sort-link" href="{{ sort_links['date'].url }}">
+          Date
+          {% if sort_links['date'].state != 'none' %}
+          <span class="sort-state">{{ sort_links['date'].state }}</span>
+          {% endif %}
+        </a>
+      </th>
+      <th>
+        <a class="sort-link" href="{{ sort_links['company'].url }}">
+          Company
+          {% if sort_links['company'].state != 'none' %}
+          <span class="sort-state">{{ sort_links['company'].state }}</span>
+          {% endif %}
+        </a>
+      </th>
+      <th>
+        <a class="sort-link" href="{{ sort_links['title'].url }}">
+          Role
+          {% if sort_links['title'].state != 'none' %}
+          <span class="sort-state">{{ sort_links['title'].state }}</span>
+          {% endif %}
+        </a>
+      </th>
+      <th>
+        <a class="sort-link" href="{{ sort_links['location'].url }}">
+          Location
+          {% if sort_links['location'].state != 'none' %}
+          <span class="sort-state">{{ sort_links['location'].state }}</span>
+          {% endif %}
+        </a>
+      </th>
+      <th>
+        <a class="sort-link" href="{{ sort_links['source'].url }}">
+          Source
+          {% if sort_links['source'].state != 'none' %}
+          <span class="sort-state">{{ sort_links['source'].state }}</span>
+          {% endif %}
+        </a>
+      </th>
+      <th>
+        <a class="sort-link" href="{{ sort_links['fit'].url }}">
+          Fit
+          {% if sort_links['fit'].state != 'none' %}
+          <span class="sort-state">{{ sort_links['fit'].state }}</span>
+          {% endif %}
+        </a>
+      </th>
+      <th>
+        <a class="sort-link" href="{{ sort_links['status'].url }}">
+          Status
+          {% if sort_links['status'].state != 'none' %}
+          <span class="sort-state">{{ sort_links['status'].state }}</span>
+          {% endif %}
+        </a>
+      </th>
+      <th>Details</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for job in jobs %}
+    <tr>
+      <td>{{ job['date_found'][:10] if job['date_found'] else '' }}</td>
+      <td>{{ job['company'] }}</td>
+      <td class="title">
+        {% if job['url'] %}
+        <a href="{{ job['url'] }}" target="_blank" rel="noreferrer">{{ job['title'] }}</a>
+        {% else %}
+        {{ job['title'] }}
+        {% endif %}
+      </td>
+      <td>{{ job['location'] or '' }}</td>
+      <td>{{ job['source'] or '' }}</td>
+      <td class="fit">{{ '%.1f'|format(job['fit_score']) if job['fit_score'] is not none else '' }}</td>
+      <td>
+        <form method="post" action="/jobs/{{ job['id'] }}/status">
+          <input type="hidden" name="next" value="{{ next_url }}" />
+          <select name="status" class="status-select">
+            {% for s in statuses %}
+            <option value="{{ s }}" {% if job['status'] == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </form>
+      </td>
+      <td>
+        <details>
+          <summary>Notes</summary>
+          {% if job['fit_reasoning'] %}
+          <p><strong>Fit reasoning:</strong> {{ job['fit_reasoning'] }}</p>
+          {% endif %}
+          {% if job['resume_variant'] %}
+          <p><strong>Resume:</strong> {{ job['resume_variant'] }}</p>
+          {% endif %}
+          {% if job['resume_reasoning'] %}
+          <p><strong>Resume reasoning:</strong> {{ job['resume_reasoning'] }}</p>
+          {% endif %}
+          {% if job['outreach_draft'] %}
+          <p><strong>Outreach:</strong> {{ job['outreach_draft'] }}</p>
+          <button
+            type="button"
+            class="copy-btn"
+            data-copy='{{ job["outreach_draft"]|tojson }}'
+          >
+            Copy outreach
+          </button>
+          {% endif %}
+          {% if job['people_links'] %}
+          <p><strong>People to reach:</strong></p>
+          <ul class="people-links">
+            {% for person in job['people_links'] %}
+            <li>
+              <a href="{{ person.url }}" target="_blank" rel="noreferrer">{{ person.query }}</a>
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if job['outreach_total'] %}
+          <p>
+            <strong>Outreach log:</strong>
+            {{ job['outreach_sent'] }}/{{ job['outreach_total'] }} sent
+          </p>
+          <ul class="outreach-log">
+            {% for entry in job['outreach_log'] %}
+            <li>
+              <span class="tag tag-{{ entry['status'] }}">{{ entry['status'] }}</span>
+              {% if entry['profile_url'] %}
+              <a href="{{ entry['profile_url'] }}" target="_blank" rel="noreferrer">
+                {{ entry['person_name'] or entry['profile_url'] }}
+              </a>
+              {% else %}
+              <span>{{ entry['person_name'] or 'Unknown profile' }}</span>
+              {% endif %}
+              <span class="muted-inline">
+                {{ entry['query_type'] or 'query' }}
+                {% if entry['query_text'] %}
+                · {{ entry['query_text'] }}
+                {% endif %}
+              </span>
+              {% if entry['reason'] %}
+              <span class="muted-inline">Reason: {{ entry['reason'] }}</span>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if job['red_flags'] %}
+          <p><strong>Red flags:</strong> {{ job['red_flags'] }}</p>
+          {% endif %}
+        </details>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
 
-          try {
-            await navigator.clipboard.writeText(text);
-            const prev = button.textContent;
-            button.textContent = "Copied";
-            setTimeout(() => {
-              button.textContent = prev;
-            }, 1200);
-          } catch {
-            button.textContent = "Copy failed";
-          }
-        });
-      });
-    </script>
-  </body>
-</html>
+{% block scripts %}
+<script>
+  document.querySelectorAll(".status-select").forEach((select) => {
+    select.addEventListener("change", () => {
+      select.form.submit();
+    });
+  });
+
+  document.querySelectorAll(".copy-btn").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const raw = button.dataset.copy || "\"\"";
+      let text = "";
+      try {
+        text = JSON.parse(raw);
+      } catch {
+        text = "";
+      }
+
+      try {
+        await navigator.clipboard.writeText(text);
+        const prev = button.textContent;
+        button.textContent = "Copied";
+        setTimeout(() => {
+          button.textContent = prev;
+        }, 1200);
+      } catch {
+        button.textContent = "Copy failed";
+      }
+    });
+  });
+</script>
+{% endblock %}

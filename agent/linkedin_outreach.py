@@ -56,6 +56,70 @@ def _normalize_profile_url(url: str | None) -> str:
     return clean.lower()
 
 
+def _normalize_company_name(name: str | None) -> str:
+    if not name:
+        return ""
+    return re.sub(r"\s+", " ", name.strip()).lower()
+
+
+def _safe_float(value: object, default: float = -1.0) -> float:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_date_found(raw: str | None) -> datetime:
+    if not raw:
+        return datetime.min
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return datetime.min
+
+
+def _select_top_jobs_by_company(jobs: list[dict]) -> list[dict]:
+    """Pick the highest scoring job per company from a provided list."""
+    best_by_company: dict[str, dict] = {}
+    for idx, job in enumerate(jobs):
+        company_key = _normalize_company_name(job.get("company"))
+        if company_key:
+            key = f"company:{company_key}"
+        else:
+            key = f"job:{job.get('id') or idx}"
+
+        score = _safe_float(job.get("fit_score"))
+        date_found = _parse_date_found(job.get("date_found"))
+
+        current = best_by_company.get(key)
+        if not current:
+            best_by_company[key] = {
+                "job": job,
+                "score": score,
+                "date_found": date_found,
+                "idx": idx,
+            }
+            continue
+
+        if (score, date_found, -idx) > (
+            current["score"],
+            current["date_found"],
+            -current["idx"],
+        ):
+            best_by_company[key] = {
+                "job": job,
+                "score": score,
+                "date_found": date_found,
+                "idx": idx,
+            }
+
+    selected_entries = list(best_by_company.values())
+    selected_entries.sort(key=lambda entry: entry["idx"])
+    return [entry["job"] for entry in selected_entries]
+
+
 async def _is_login_page(page) -> bool:
     url = page.url or ""
     if "/login" in url:
@@ -350,6 +414,14 @@ async def run_linkedin_outreach(jobs: list[dict], headless: bool = True) -> dict
     if not jobs:
         return {"processed": 0, "sent": 0, "skipped": 0, "errors": 0}
 
+    original_count = len(jobs)
+    jobs = _select_top_jobs_by_company(jobs)
+    if len(jobs) < original_count:
+        console.log(
+            f"[dim]LinkedIn outreach: targeting top-scoring role per company "
+            f"({len(jobs)}/{original_count}).[/dim]"
+        )
+
     storage_state = _get_storage_state_path()
     if not storage_state.exists():
         console.log(
@@ -515,6 +587,8 @@ async def run_linkedin_outreach(jobs: list[dict], headless: bool = True) -> dict
                                 )
                                 sent += 1
                                 job_sent += 1
+                                if job.get("id"):
+                                    update_job_status(job["id"], "outreach")
                             else:
                                 insert_outreach_log(
                                     job_id=job.get("id"),
@@ -548,9 +622,6 @@ async def run_linkedin_outreach(jobs: list[dict], headless: bool = True) -> dict
                         finally:
                             await profile_page.close()
                             await asyncio.sleep(1.2)
-
-                if job_sent > 0:
-                    update_job_status(job["id"], "outreach")
 
                 progress.advance(jobs_task)
 

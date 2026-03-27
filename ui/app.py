@@ -200,6 +200,98 @@ def _query_jobs(
     except sqlite3.OperationalError as exc:
         return [], 0, 1, 0, str(exc)
 
+
+def _parse_outreach_filters(args) -> dict:
+    job_title = (args.get("job_title") or "").strip()
+    company = (args.get("company") or "").strip()
+    query_type = (args.get("query_type") or "").strip()
+    status = (args.get("status") or "").strip()
+
+    page_raw = (args.get("page") or "").strip()
+    try:
+        page = int(page_raw) if page_raw else 1
+    except ValueError:
+        page = 1
+    if page < 1:
+        page = 1
+
+    return {
+        "job_title": job_title,
+        "company": company,
+        "query_type": query_type,
+        "status": status,
+        "page": page,
+    }
+
+
+def _get_outreach_query_types() -> list[str]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT query_type
+            FROM outreach_log
+            WHERE query_type IS NOT NULL AND query_type <> ''
+            ORDER BY query_type
+            """
+        ).fetchall()
+        return [r[0] for r in rows]
+
+
+def _get_outreach_statuses() -> list[str]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT status
+            FROM outreach_log
+            WHERE status IS NOT NULL AND status <> ''
+            ORDER BY status
+            """
+        ).fetchall()
+        return [r[0] for r in rows]
+
+
+def _query_outreach(
+    filters: dict,
+) -> tuple[list[sqlite3.Row], int, int, int, str | None]:
+    where = []
+    params: list[object] = []
+
+    if filters["job_title"]:
+        where.append("LOWER(job_title) LIKE ?")
+        params.append(f"%{filters['job_title'].lower()}%")
+
+    if filters["company"]:
+        where.append("LOWER(company) LIKE ?")
+        params.append(f"%{filters['company'].lower()}%")
+
+    if filters["query_type"]:
+        where.append("query_type = ?")
+        params.append(filters["query_type"])
+
+    if filters["status"]:
+        where.append("status = ?")
+        params.append(filters["status"])
+
+    try:
+        with get_connection() as conn:
+            base_sql = "FROM outreach_log"
+            if where:
+                base_sql += " WHERE " + " AND ".join(where)
+
+            total = conn.execute(f"SELECT COUNT(1) {base_sql}", params).fetchone()[0]
+            if total == 0:
+                return [], 0, 1, 0, None
+
+            total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+            page = min(filters["page"], total_pages)
+            offset = (page - 1) * PAGE_SIZE
+
+            data_sql = f"SELECT * {base_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            rows = conn.execute(data_sql, params + [PAGE_SIZE, offset]).fetchall()
+            return rows, total, page, total_pages, None
+    except sqlite3.OperationalError as exc:
+        return [], 0, 1, 0, str(exc)
+
 def _clean_params(args: dict) -> dict:
     cleaned: dict[str, object] = {}
     for key, value in args.items():
@@ -213,10 +305,14 @@ def _clean_params(args: dict) -> dict:
     return cleaned
 
 
-def _build_sort_links(args: dict, current_sort: str, current_dir: str) -> dict:
+def _build_sort_links(
+    args: dict, current_sort: str, current_dir: str, base_path: str = "/"
+) -> dict:
     base = _clean_params(args)
     base.pop("page", None)
     links: dict[str, dict[str, str]] = {}
+    if not base_path.startswith("/"):
+        base_path = f"/{base_path}"
     for key in ALLOWED_SORTS:
         if current_sort == key:
             if current_dir == "asc":
@@ -236,7 +332,7 @@ def _build_sort_links(args: dict, current_sort: str, current_dir: str) -> dict:
             params.pop("sort", None)
             params.pop("dir", None)
 
-        url = "/"
+        url = base_path
         if params:
             url += "?" + urlencode(params, doseq=True)
 
@@ -248,8 +344,12 @@ def _build_sort_links(args: dict, current_sort: str, current_dir: str) -> dict:
     return links
 
 
-def _build_page_links(args: dict, page: int, total_pages: int) -> dict:
+def _build_page_links(
+    args: dict, page: int, total_pages: int, base_path: str = "/"
+) -> dict:
     base = _clean_params(args)
+    if not base_path.startswith("/"):
+        base_path = f"/{base_path}"
 
     def _url_for(target_page: int) -> str:
         params = dict(base)
@@ -258,8 +358,8 @@ def _build_page_links(args: dict, page: int, total_pages: int) -> dict:
         else:
             params["page"] = str(target_page)
         if params:
-            return "/?" + urlencode(params, doseq=True)
-        return "/"
+            return f"{base_path}?" + urlencode(params, doseq=True)
+        return base_path
 
     prev_url = _url_for(page - 1) if page > 1 else ""
     next_url = _url_for(page + 1) if page < total_pages else ""
@@ -297,10 +397,13 @@ def index():
     sources = _get_sources() if not error else []
     locations = _get_locations() if not error else []
     sort_links = _build_sort_links(
-        request.args.to_dict(flat=False), filters["sort"], filters["sort_dir"]
+        request.args.to_dict(flat=False),
+        filters["sort"],
+        filters["sort_dir"],
+        base_path="/",
     )
     page_links = _build_page_links(
-        request.args.to_dict(flat=False), page, total_pages
+        request.args.to_dict(flat=False), page, total_pages, base_path="/"
     )
 
     job_ids = [row["id"] for row in jobs]
@@ -354,6 +457,34 @@ def index():
         total_pages=total_pages,
         sort_links=sort_links,
         page_links=page_links,
+        active_tab="jobs",
+    )
+
+
+@app.get("/outreach")
+def outreach():
+    filters = _parse_outreach_filters(request.args)
+    entries, total, page, total_pages, error = _query_outreach(filters)
+    query_types = _get_outreach_query_types() if not error else []
+    outreach_statuses = _get_outreach_statuses() if not error else []
+    page_links = _build_page_links(
+        request.args.to_dict(flat=False), page, total_pages, base_path="/outreach"
+    )
+
+    outreach_rows = [dict(row) for row in entries]
+
+    return render_template(
+        "outreach.html",
+        outreach=outreach_rows,
+        filters=filters,
+        query_types=query_types,
+        outreach_statuses=outreach_statuses,
+        error=error,
+        total=total,
+        page=page,
+        total_pages=total_pages,
+        page_links=page_links,
+        active_tab="outreach",
     )
 
 

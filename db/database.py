@@ -239,7 +239,7 @@ def has_outreach_profile(profile_url: str) -> bool:
         return False
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT 1 FROM outreach_log WHERE profile_url=?",
+            "SELECT 1 FROM outreach_log WHERE profile_url=? AND status='sent'",
             (profile_url,),
         ).fetchone()
         return row is not None
@@ -267,6 +267,17 @@ def insert_outreach_log(
                     person_name, profile_url, status, reason, note_text, created_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(profile_url) DO UPDATE SET
+                    job_id=excluded.job_id,
+                    job_title=excluded.job_title,
+                    company=excluded.company,
+                    query_type=excluded.query_type,
+                    query_text=excluded.query_text,
+                    person_name=excluded.person_name,
+                    status=excluded.status,
+                    reason=excluded.reason,
+                    note_text=excluded.note_text,
+                    created_at=excluded.created_at
             """,
                 (
                     job_id,
@@ -283,5 +294,5 @@ def insert_outreach_log(
                 ),
             )
         return True
-    except sqlite3.IntegrityError:
+    except sqlite3.Error:
         return False

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="panel">
+  <form class="filters" method="get">
+    <div>
+      <label for="job_title">Job title</label>
+      <input
+        id="job_title"
+        name="job_title"
+        placeholder="Search job title"
+        value="{{ filters.job_title }}"
+      />
+    </div>
+
+    <div>
+      <label for="company">Company</label>
+      <input id="company" name="company" placeholder="Search company" value="{{ filters.company }}" />
+    </div>
+
+    <div>
+      <label for="query_type">Query type</label>
+      <select id="query_type" name="query_type">
+        <option value="">All query types</option>
+        {% for qt in query_types %}
+        <option value="{{ qt }}" {% if filters.query_type == qt %}selected{% endif %}>
+          {{ qt }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="">All statuses</option>
+        {% for s in outreach_statuses %}
+        <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>
+          {{ s }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="actions">
+      <button type="submit">Apply</button>
+      <a class="ghost" href="/outreach">Clear</a>
+    </div>
+  </form>
+
+  {% if error %}
+  <p class="error">Database error: {{ error }}</p>
+  {% else %}
+  <p class="meta">{{ total }} outreach log entr{{ 'y' if total == 1 else 'ies' }} shown.</p>
+  {% if total_pages > 1 %}
+  <div class="pager">
+    <div>
+      {% if page_links.prev %}
+      <a href="{{ page_links.prev }}">Previous</a>
+      {% else %}
+      <span class="muted">Previous</span>
+      {% endif %}
+    </div>
+    <div class="muted">Page {{ page }} of {{ total_pages }}</div>
+    <div>
+      {% if page_links.next %}
+      <a href="{{ page_links.next }}">Next</a>
+      {% else %}
+      <span class="muted">Next</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+{% if not error %}
+<table>
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Role</th>
+      <th>Company</th>
+      <th>Person</th>
+      <th>Query type</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for entry in outreach %}
+    <tr>
+      <td>{{ entry['created_at'][:10] if entry['created_at'] else '' }}</td>
+      <td class="title">{{ entry['job_title'] or '' }}</td>
+      <td>{{ entry['company'] or '' }}</td>
+      <td>
+        {% if entry['profile_url'] %}
+        <a href="{{ entry['profile_url'] }}" target="_blank" rel="noreferrer">
+          {{ entry['person_name'] or entry['profile_url'] }}
+        </a>
+        {% else %}
+        <span>{{ entry['person_name'] or '' }}</span>
+        {% endif %}
+        {% if entry['query_text'] %}
+        <div class="muted-inline">{{ entry['query_text'] }}</div>
+        {% endif %}
+      </td>
+      <td>{{ entry['query_type'] or '' }}</td>
+      <td>
+        {% if entry['status'] %}
+        <span class="tag tag-{{ entry['status'] }}">{{ entry['status'] }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

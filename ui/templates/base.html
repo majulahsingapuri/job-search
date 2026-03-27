@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ title or "Job Tracker" }}</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&family=Source+Serif+4:wght@400;600&display=swap");
+
+      :root {
+        --bg: #f3f1ee;
+        --panel: #ffffff;
+        --ink: #1c1c1c;
+        --muted: #6b6b6b;
+        --accent: #0f766e;
+        --accent-2: #f59e0b;
+        --border: #e5e2dd;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: radial-gradient(1200px 600px at 10% -10%, #fef3c7, transparent),
+          radial-gradient(1200px 600px at 110% 0%, #ccfbf1, transparent),
+          var(--bg);
+      }
+
+      header {
+        padding: 24px 32px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      h1 {
+        margin: 0 0 4px 0;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        margin: 0;
+      }
+
+      .nav {
+        display: inline-flex;
+        gap: 6px;
+        padding: 6px;
+        border-radius: 999px;
+        background: #fff;
+        border: 1px solid var(--border);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+        width: fit-content;
+      }
+
+      .nav-link {
+        text-decoration: none;
+        color: var(--muted);
+        font-weight: 600;
+        padding: 6px 16px;
+        border-radius: 999px;
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+
+      .nav-link:hover {
+        color: var(--ink);
+        background: #f8f6f2;
+      }
+
+      .nav-link.active {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .wrap {
+        padding: 16px 32px 40px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+      }
+
+      .filters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        align-items: end;
+      }
+
+      label {
+        display: block;
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+
+      input,
+      select {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-family: inherit;
+        background: #fff;
+      }
+
+      .checklist {
+        display: grid;
+        gap: 6px;
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #fff;
+        max-height: 160px;
+        overflow-y: auto;
+      }
+
+      .checklist label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 0.85rem;
+        color: var(--ink);
+        margin: 0;
+      }
+
+      .checklist input {
+        width: auto;
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      button,
+      .ghost {
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        font-weight: 600;
+        cursor: pointer;
+        background: var(--accent);
+        color: #fff;
+        text-decoration: none;
+        display: inline-block;
+      }
+
+      .ghost {
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .meta {
+        margin: 12px 0 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+        font-size: 0.95rem;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--border);
+        padding: 10px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .title {
+        font-family: "Source Serif 4", serif;
+        font-weight: 600;
+      }
+
+      .sort-link {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        padding: 2px 6px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        text-decoration: none;
+        color: inherit;
+      }
+
+      .sort-link:hover {
+        border-color: var(--border);
+        background: #faf9f7;
+      }
+
+      .sort-state {
+        font-size: 0.7rem;
+        color: var(--muted);
+        text-transform: lowercase;
+      }
+
+      .status-pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #f4f4f4;
+        font-size: 0.8rem;
+        margin-bottom: 6px;
+      }
+
+      details {
+        margin-top: 6px;
+      }
+
+      details summary {
+        cursor: pointer;
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .fit {
+        font-weight: 600;
+        color: var(--accent-2);
+      }
+
+      .error {
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #fee2e2;
+        border: 1px solid #fecaca;
+        color: #991b1b;
+      }
+
+      .pager {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 12px;
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      .pager a {
+        text-decoration: none;
+        font-weight: 600;
+        color: var(--accent);
+      }
+
+      .pager .muted {
+        color: var(--muted);
+      }
+
+      .copy-btn {
+        margin-top: 6px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #fff;
+        font-weight: 600;
+        color: #000;
+        cursor: pointer;
+      }
+
+      .people-links {
+        margin: 6px 0 0;
+        padding-left: 16px;
+      }
+
+      .people-links a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      .outreach-log {
+        margin: 8px 0 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .outreach-log li {
+        display: grid;
+        gap: 4px;
+        padding: 8px 10px;
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+        background: #faf9f7;
+        font-size: 0.85rem;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .tag-sent {
+        background: rgba(16, 185, 129, 0.15);
+        color: #047857;
+        border: 1px solid rgba(16, 185, 129, 0.4);
+      }
+
+      .tag-skipped {
+        background: rgba(234, 179, 8, 0.15);
+        color: #b45309;
+        border: 1px solid rgba(234, 179, 8, 0.4);
+      }
+
+      .tag-failed {
+        background: rgba(239, 68, 68, 0.15);
+        color: #b91c1c;
+        border: 1px solid rgba(239, 68, 68, 0.4);
+      }
+
+      .muted-inline {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      @media (max-width: 900px) {
+        header,
+        .wrap {
+          padding: 16px;
+        }
+
+        table,
+        thead,
+        tbody,
+        th,
+        td,
+        tr {
+          display: block;
+        }
+
+        th {
+          display: none;
+        }
+
+        tr {
+          margin-bottom: 18px;
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 10px;
+          background: #fff;
+        }
+
+        td {
+          border: none;
+          padding: 6px 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Job Tracker</h1>
+        <p class="subtitle">Filter, review, and update statuses from your SQLite pipeline.</p>
+      </div>
+      <nav class="nav">
+        <a class="nav-link {% if active_tab == 'jobs' %}active{% endif %}" href="/">
+          Job sourcing &amp; application
+        </a>
+        <a class="nav-link {% if active_tab == 'outreach' %}active{% endif %}" href="/outreach">
+          Outreach
+        </a>
+      </nav>
+    </header>
+
+    <div class="wrap">
+      {% block content %}{% endblock %}
+    </div>
+
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

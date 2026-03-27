@@ -183,7 +183,7 @@ async def scrape_linkedin(
 
                         if title and company:
                             # Skip aggregator postings
-                            if company in ["Lensa", "WayUp"]:
+                            if company in ["Lensa", "WayUp", "Jobs via Dice"]:
                                 continue
                             jobs.append(
                                 {
