@@ -19,6 +19,7 @@ from rich.console import Console
 
 from db.database import get_unnotified_jobs, mark_notified
 from config.resumes import RESUME_VARIANTS
+from utils import LINKEDIN_PEOPLE_SEARCH_URL
 
 console = Console()
 
@@ -80,7 +81,7 @@ def _build_html(jobs: list[dict], date_str: str) -> str:
             queries = []
 
         query_links = "".join(
-            f'<li style="margin:4px 0;"><a href="https://www.linkedin.com/search/results/people/'
+            f'<li style="margin:4px 0;"><a href="{LINKEDIN_PEOPLE_SEARCH_URL}'
             f'?keywords={q.replace(" ", "%20")}" style="color:#6366f1;font-size:13px;">{q}</a></li>'
             for q in queries
         )

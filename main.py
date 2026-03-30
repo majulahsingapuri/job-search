@@ -3,17 +3,19 @@ main.py
 Full pipeline: scrape → deduplicate → score (Claude) → email digest.
 
 Usage:
-    python main.py               # Start scheduler (daily at SCRAPE_TIME)
-    python main.py --now         # Run full pipeline once, then exit
-    python main.py --score-only  # Skip scraping, score unscored jobs, send digest
-    python main.py --digest-only # Skip scraping + scoring, just send digest
-    python main.py --outreach-only --headful  # Outreach with visible browser
-    python main.py --linkedin    # Run only LinkedIn scraper
-    python main.py --simplify    # Run only Simplify scraper
-    python main.py --hn          # Run only HN Hiring scraper
+    python main.py                                    # Start scheduler (daily at SCRAPE_TIME)
+    python main.py --now                              # Run full pipeline once, then exit
+    python main.py --score-only                       # Skip scraping, score unscored jobs, send digest
+    python main.py --digest-only                      # Skip scraping + scoring, just send digest
+    python main.py --outreach-only --headful          # Outreach with visible browser
+    python main.py --outreach-only --outreach-date 2026-03-25
+    python main.py --linkedin                         # Run only LinkedIn scraper
+    python main.py --simplify                         # Run only Simplify scraper
+    python main.py --hn                               # Run only HN Hiring scraper
 """
 
 import asyncio
+import argparse
 import sys
 import os
 import schedule
@@ -54,15 +56,25 @@ async def _run_scraper(source: str, coro) -> tuple[int, int]:
         return 0, 0
 
 
-def _parse_selected_scrapers(argv: list[str]) -> list[str]:
+def _parse_selected_scrapers(args: argparse.Namespace) -> list[str]:
     selected = []
-    if "--linkedin" in argv:
+    if args.linkedin:
         selected.append("linkedin")
-    if "--simplify" in argv:
+    if args.simplify:
         selected.append("simplify")
-    if "--hn" in argv:
+    if args.hn:
         selected.append("hn")
     return selected or ["linkedin", "simplify", "hn"]
+
+
+def _parse_outreach_date_arg(value: str) -> str:
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "outreach date must be in YYYY-MM-DD format"
+        ) from exc
+    return value
 
 
 async def _scrape_stage(selected: list[str], headful: bool = False) -> int:
@@ -116,6 +128,7 @@ async def run_pipeline(
     skip_score: bool = False,
     selected: list[str] | None = None,
     headful: bool = False,
+    outreach_targets: list[str] | None = None,
 ):
     console.rule(f"[bold blue]Job Agent — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
@@ -139,39 +152,114 @@ async def run_pipeline(
 
     if result.get("sent") and result.get("jobs"):
         console.log("[cyan]LinkedIn:[/cyan] Starting outreach stage...")
-        await run_linkedin_outreach(result["jobs"], headless=not headful)
+        await run_linkedin_outreach(
+            result["jobs"], headless=not headful, targets=outreach_targets
+        )
 
     console.rule("[dim]Done[/dim]")
 
 
-def run_pipeline_sync(selected: list[str], headful: bool = False):
-    asyncio.run(run_pipeline(selected=selected, headful=headful))
+def run_pipeline_sync(
+    selected: list[str],
+    headful: bool = False,
+    outreach_targets: list[str] | None = None,
+):
+    asyncio.run(
+        run_pipeline(
+            selected=selected, headful=headful, outreach_targets=outreach_targets
+        )
+    )
 
 
-async def run_outreach_today(headful: bool = False) -> None:
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    jobs = get_jobs_scraped_on(today_str)
+async def run_outreach_for_date(
+    outreach_date: str,
+    headful: bool = False,
+    outreach_targets: list[str] | None = None,
+) -> None:
+    jobs = get_jobs_scraped_on(outreach_date)
     if not jobs:
-        console.log(f"[yellow]No scored jobs found for {today_str}.[/yellow]")
+        console.log(
+            f"[yellow]No scored jobs found for {outreach_date}.[/yellow]"
+        )
         return
     console.log(
-        f"[cyan]LinkedIn:[/cyan] Running outreach for {len(jobs)} jobs from {today_str}"
+        f"[cyan]LinkedIn:[/cyan] Running outreach for {len(jobs)} jobs from {outreach_date}"
     )
-    await run_linkedin_outreach(jobs, headless=not headful)
+    await run_linkedin_outreach(
+        jobs, headless=not headful, targets=outreach_targets
+    )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Job Agent — scrape, score, digest, and run LinkedIn outreach."
+    )
+    parser.add_argument(
+        "--now",
+        action="store_true",
+        help="Run full pipeline once, then exit.",
+    )
+    parser.add_argument(
+        "--score-only",
+        action="store_true",
+        help="Skip scraping, score unscored jobs, then send digest.",
+    )
+    parser.add_argument(
+        "--digest-only",
+        action="store_true",
+        help="Skip scraping + scoring, just send digest.",
+    )
+    parser.add_argument(
+        "--outreach-only",
+        action="store_true",
+        help="Run LinkedIn outreach for a specific date (default: today).",
+    )
+    parser.add_argument(
+        "--outreach-date",
+        type=_parse_outreach_date_arg,
+        help="Date for --outreach-only in YYYY-MM-DD format.",
+    )
+    parser.add_argument(
+        "--headful",
+        action="store_true",
+        help="Show the browser for stages that use Playwright.",
+    )
+    parser.add_argument(
+        "--linkedin",
+        action="store_true",
+        help="Run LinkedIn scraper only (can be combined with other scrapers).",
+    )
+    parser.add_argument(
+        "--simplify",
+        action="store_true",
+        help="Run Simplify scraper only (can be combined with other scrapers).",
+    )
+    parser.add_argument(
+        "--hn",
+        action="store_true",
+        help="Run HN Hiring scraper only (can be combined with other scrapers).",
+    )
+    return parser
 
 
 if __name__ == "__main__":
     init_db()
-    SELECTED_SCRAPERS = _parse_selected_scrapers(sys.argv)
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    if args.outreach_date and not args.outreach_only:
+        parser.error("--outreach-date requires --outreach-only")
+
+    SELECTED_SCRAPERS = _parse_selected_scrapers(args)
     console.log("[bold green]Job Agent started[/bold green]")
     console.log(f"  Keywords : {KEYWORDS}")
     console.log(f"  Location : {LOCATION}")
     console.log(f"  Schedule : daily at {SCRAPE_TIME}")
     console.log(f"  Scrapers : {', '.join(SELECTED_SCRAPERS)}")
 
-    headful = "--headful" in sys.argv or "--outreach-headful" in sys.argv
+    headful = args.headful
 
-    if "--digest-only" in sys.argv:
+    if args.digest_only:
         console.log(
             "[yellow]--digest-only: sending digest of already-scored jobs[/yellow]"
         )
@@ -185,14 +273,19 @@ if __name__ == "__main__":
         )
         sys.exit(0)
 
-    if "--outreach-only" in sys.argv:
+    if args.outreach_only:
+        outreach_date = args.outreach_date or datetime.now().strftime("%Y-%m-%d")
         console.log(
-            "[yellow]--outreach-only: running LinkedIn outreach for today's jobs[/yellow]"
+            "[yellow]--outreach-only: running LinkedIn outreach[/yellow]"
         )
-        asyncio.run(run_outreach_today(headful=headful))
+        asyncio.run(
+            run_outreach_for_date(
+                outreach_date, headful=headful
+            )
+        )
         sys.exit(0)
 
-    if "--score-only" in sys.argv:
+    if args.score_only:
         console.log(
             "[yellow]--score-only: scoring unscored jobs then sending digest[/yellow]"
         )
@@ -205,7 +298,7 @@ if __name__ == "__main__":
         )
         sys.exit(0)
 
-    if "--now" in sys.argv:
+    if args.now:
         console.log("[yellow]--now: running full pipeline immediately[/yellow]")
         asyncio.run(run_pipeline(selected=SELECTED_SCRAPERS, headful=headful))
         sys.exit(0)

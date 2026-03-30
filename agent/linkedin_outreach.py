@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from datetime import datetime
-from pathlib import Path
 from urllib.parse import quote
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
@@ -23,23 +23,57 @@ from rich.progress import (
 )
 
 from db.database import has_outreach_profile, insert_outreach_log, update_job_status
+from utils import (
+    DEFAULT_LINKEDIN_STORAGE_STATE,
+    LINKEDIN_PEOPLE_SEARCH_URL,
+    LINKEDIN_USER_AGENT,
+    get_linkedin_storage_state_path,
+    is_linkedin_login_page,
+)
 
 console = Console()
 
-LINKEDIN_PEOPLE_SEARCH = "https://www.linkedin.com/search/results/people/"
-DEFAULT_STORAGE_STATE = ".auth/linkedin_state.json"
-USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
 LOCATION_FILTER = "United States"
 SCHOOLS = ["Northeastern University", "Nanyang Technological University Singapore"]
+ALLOWED_OUTREACH_TARGETS = ("recruiter", "hiring_manager", "alumni")
+DEFAULT_OUTREACH_TARGETS = list(ALLOWED_OUTREACH_TARGETS)
+OUTREACH_TARGET_ALIASES = {
+    "recruiters": "recruiter",
+    "hiring": "hiring_manager",
+    "hiring_manager": "hiring_manager",
+    "hiring-managers": "hiring_manager",
+    "hiring_managers": "hiring_manager",
+    "hiringmanager": "hiring_manager",
+    "hiringmanagers": "hiring_manager",
+    "hiring-manager": "hiring_manager",
+    "manager": "hiring_manager",
+    "alum": "alumni",
+}
 
 
-def _get_storage_state_path() -> Path:
-    raw = DEFAULT_STORAGE_STATE
-    return Path(raw).expanduser()
+def _normalize_outreach_targets(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen = set()
+    for value in values:
+        key = value.strip().lower()
+        if not key:
+            continue
+        key = key.replace(" ", "_")
+        key = OUTREACH_TARGET_ALIASES.get(key, key)
+        if key in ALLOWED_OUTREACH_TARGETS and key not in seen:
+            normalized.append(key)
+            seen.add(key)
+    return normalized
+
+
+def _resolve_outreach_targets(targets: list[str] | None) -> list[str]:
+    if targets is None:
+        raw = os.getenv("OUTREACH_TARGETS", "")
+        if not raw.strip():
+            return DEFAULT_OUTREACH_TARGETS.copy()
+        parsed = [part.strip() for part in raw.split(",") if part.strip()]
+        return _normalize_outreach_targets(parsed)
+    return _normalize_outreach_targets(targets)
 
 
 def _normalize_profile_url(url: str | None) -> str:
@@ -121,13 +155,7 @@ def _select_top_jobs_by_company(jobs: list[dict]) -> list[dict]:
 
 
 async def _is_login_page(page) -> bool:
-    url = page.url or ""
-    if "/login" in url:
-        return True
-    login_el = await page.query_selector(
-        "input[name='session_key'], input#username, form[action*='login']"
-    )
-    return login_el is not None
+    return await is_linkedin_login_page(page)
 
 
 async def _open_all_filters(page):
@@ -338,7 +366,7 @@ async def _search_people(
 ) -> tuple[list[dict], str | None]:
     page = await context.new_page()
     try:
-        url = f"{LINKEDIN_PEOPLE_SEARCH}?keywords={quote(query_text)}"
+        url = f"{LINKEDIN_PEOPLE_SEARCH_URL}?keywords={quote(query_text)}"
         await page.goto(url, timeout=30000, wait_until="domcontentloaded")
         await page.wait_for_timeout(2000)
         if await _is_login_page(page):
@@ -410,8 +438,20 @@ async def _connect_and_send_note(page, note: str) -> tuple[bool, str | None]:
         return False, f"error:{e}"
 
 
-async def run_linkedin_outreach(jobs: list[dict], headless: bool = True) -> dict:
+async def run_linkedin_outreach(
+    jobs: list[dict],
+    headless: bool = True,
+    targets: list[str] | None = None,
+) -> dict:
     if not jobs:
+        return {"processed": 0, "sent": 0, "skipped": 0, "errors": 0}
+
+    selected_targets = _resolve_outreach_targets(targets)
+    if not selected_targets:
+        console.log(
+            "[yellow]LinkedIn outreach: no outreach targets enabled. "
+            "Set OUTREACH_TARGETS to include recruiter, hiring_manager, alumni.[/yellow]"
+        )
         return {"processed": 0, "sent": 0, "skipped": 0, "errors": 0}
 
     original_count = len(jobs)
@@ -422,7 +462,9 @@ async def run_linkedin_outreach(jobs: list[dict], headless: bool = True) -> dict
             f"({len(jobs)}/{original_count}).[/dim]"
         )
 
-    storage_state = _get_storage_state_path()
+    storage_state = get_linkedin_storage_state_path(
+        default_path=DEFAULT_LINKEDIN_STORAGE_STATE
+    )
     if not storage_state.exists():
         console.log(
             f"[red]LinkedIn outreach: session not found at {storage_state}[/red]"
@@ -436,12 +478,12 @@ async def run_linkedin_outreach(jobs: list[dict], headless: bool = True) -> dict
             headless=headless, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
         context = await browser.new_context(
-            user_agent=USER_AGENT, storage_state=str(storage_state)
+            user_agent=LINKEDIN_USER_AGENT, storage_state=str(storage_state)
         )
 
         # Validate login once
         page = await context.new_page()
-        await page.goto(LINKEDIN_PEOPLE_SEARCH, wait_until="domcontentloaded")
+        await page.goto(LINKEDIN_PEOPLE_SEARCH_URL, wait_until="domcontentloaded")
         await page.wait_for_timeout(1500)
         if await _is_login_page(page):
             console.log(
@@ -492,10 +534,18 @@ async def run_linkedin_outreach(jobs: list[dict], headless: bool = True) -> dict
                     queries[2] if len(queries) > 2 and queries[2] else "alumni"
                 )
 
+                query_definitions = {
+                    "recruiter": (
+                        "early career talent recruiter university",
+                        False,
+                    ),
+                    "hiring_manager": (hiring_query, False),
+                    "alumni": (alumni_query, True),
+                }
                 query_set = [
-                    ("recruiter", "early career talent recruiter university", False),
-                    ("hiring_team", hiring_query, False),
-                    ("alumni", alumni_query, True),
+                    (target, *query_definitions[target])
+                    for target in selected_targets
+                    if target in query_definitions
                 ]
 
                 for query_type, query_text, use_schools in query_set:

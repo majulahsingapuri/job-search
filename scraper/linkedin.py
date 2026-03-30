@@ -7,35 +7,32 @@ Uses Playwright in headless mode to handle JS-rendered content.
 import asyncio
 import os
 import sys
+import time
 from pathlib import Path
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from rich.console import Console
 from dotenv import load_dotenv
 
+from utils import (
+    DEFAULT_LINKEDIN_STORAGE_STATE,
+    LINKEDIN_USER_AGENT,
+    get_linkedin_storage_state_path,
+    is_linkedin_login_page,
+)
+
 load_dotenv()
 console = Console()
 
 LINKEDIN_BASE = "https://www.linkedin.com/jobs/search"
 LINKEDIN_LOGIN_URL = "https://www.linkedin.com/login"
-DEFAULT_STORAGE_STATE = ".auth/linkedin_state.json"
-USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
-
-
-def _get_storage_state_path() -> Path:
-    raw = os.getenv("LINKEDIN_STORAGE_STATE", DEFAULT_STORAGE_STATE)
-    return Path(raw).expanduser()
 
 
 async def _create_context(browser, storage_state: Path | None) -> tuple:
     if storage_state and storage_state.exists():
         console.log(f"[cyan]LinkedIn:[/cyan] Using saved session at {storage_state}")
         context = await browser.new_context(
-            user_agent=USER_AGENT, storage_state=str(storage_state)
+            user_agent=LINKEDIN_USER_AGENT, storage_state=str(storage_state)
         )
         return context, True
 
@@ -43,18 +40,38 @@ async def _create_context(browser, storage_state: Path | None) -> tuple:
         console.log(
             "[yellow]LinkedIn session not found; continuing without login.[/yellow]"
         )
-    context = await browser.new_context(user_agent=USER_AGENT)
+    context = await browser.new_context(user_agent=LINKEDIN_USER_AGENT)
     return context, False
 
 
-async def _is_login_page(page) -> bool:
+async def _is_two_factor_page(page) -> bool:
     url = page.url or ""
-    if "/login" in url:
+    if "/checkpoint/" in url or "two-step" in url or "challenge" in url:
         return True
-    login_el = await page.query_selector(
-        "input[name='session_key'], input#username, form[action*='login']"
+    twofa_el = await page.query_selector(
+        "input[name='pin'], input[name='otp'], input[name='verificationCode'], "
+        "input#input__phone_verification_pin, input#input__email_verification_pin"
     )
-    return login_el is not None
+    return twofa_el is not None
+
+
+async def _wait_for_login_success(page, timeout_ms: int = 180_000) -> bool:
+    start = time.monotonic()
+    warned_2fa = False
+    while (time.monotonic() - start) * 1000 < timeout_ms:
+        if await _is_two_factor_page(page):
+            if not warned_2fa:
+                console.log(
+                    "[yellow]LinkedIn:[/yellow] 2FA detected. Approve the login, "
+                    "then wait for the page to finish redirecting."
+                )
+                warned_2fa = True
+        elif await is_linkedin_login_page(page):
+            pass
+        else:
+            return True
+        await page.wait_for_timeout(1000)
+    return False
 
 
 async def _goto_with_login_fallback(
@@ -67,7 +84,7 @@ async def _goto_with_login_fallback(
     await page.goto(url, timeout=30000, wait_until="domcontentloaded")
     await page.wait_for_timeout(2500)  # Let JS render
 
-    if used_state and await _is_login_page(page):
+    if used_state and await is_linkedin_login_page(page):
         console.log(
             "[yellow]LinkedIn session expired; falling back to public listings.[/yellow]"
         )
@@ -81,7 +98,9 @@ async def _goto_with_login_fallback(
 
 
 async def login_linkedin(headless: bool = True) -> None:
-    storage_state = _get_storage_state_path()
+    storage_state = get_linkedin_storage_state_path(
+        default_path=DEFAULT_LINKEDIN_STORAGE_STATE
+    )
     storage_state.parent.mkdir(parents=True, exist_ok=True)
     username = os.getenv("LINKEDIN_USERNAME", "").strip()
     password = os.getenv("LINKEDIN_PASSWORD", "").strip()
@@ -97,7 +116,7 @@ async def login_linkedin(headless: bool = True) -> None:
         browser = await p.chromium.launch(
             headless=headless, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
-        context = await browser.new_context(user_agent=USER_AGENT)
+        context = await browser.new_context(user_agent=LINKEDIN_USER_AGENT)
         page = await context.new_page()
 
         console.log("[cyan]LinkedIn:[/cyan] Opening login page...")
@@ -112,8 +131,19 @@ async def login_linkedin(headless: bool = True) -> None:
                 timeout=10000,
             )
             await page.click("button[type='submit']", timeout=10000)
-            await page.wait_for_timeout(5000)
-            if await _is_login_page(page):
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=30000)
+            except PWTimeout:
+                pass
+            await page.wait_for_timeout(2000)
+            if await _is_two_factor_page(page):
+                console.log(
+                    "[red]LinkedIn login requires 2FA. "
+                    "Use --headful to complete the login interactively.[/red]"
+                )
+                await browser.close()
+                return
+            if await is_linkedin_login_page(page):
                 console.log(
                     "[red]LinkedIn login failed in headless mode. "
                     "If you have MFA, use --headful to login interactively.[/red]"
@@ -125,6 +155,21 @@ async def login_linkedin(headless: bool = True) -> None:
                 "[cyan]LinkedIn:[/cyan] Complete login in the browser, then press Enter here."
             )
             input()
+            try:
+                await page.wait_for_load_state("networkidle", timeout=30000)
+            except PWTimeout:
+                pass
+            if await is_linkedin_login_page(page) or await _is_two_factor_page(page):
+                console.log(
+                    "[yellow]LinkedIn:[/yellow] Waiting for login to complete..."
+                )
+                if not await _wait_for_login_success(page):
+                    console.log(
+                        "[red]LinkedIn login timed out. "
+                        "Try again and ensure the login completes before pressing Enter.[/red]"
+                    )
+                    await browser.close()
+                    return
 
         await context.storage_state(path=str(storage_state))
         await browser.close()
@@ -159,7 +204,9 @@ async def scrape_linkedin(
         browser = await p.chromium.launch(
             headless=headless, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
-        storage_state = _get_storage_state_path()
+        storage_state = get_linkedin_storage_state_path(
+            default_path=DEFAULT_LINKEDIN_STORAGE_STATE
+        )
         context, used_state = await _create_context(browser, storage_state)
         page = await context.new_page()
 
