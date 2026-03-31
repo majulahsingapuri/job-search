@@ -78,25 +78,29 @@ cp .env.example .env
 
 Edit `.env` (make sure to add your LLM provider API key):
 
-| Variable                   | What to set                                                                         |
-|----------------------------|-------------------------------------------------------------------------------------|
-| `ANTHROPIC_API_KEY`        | your anthropic api key                                                              |
-| `LLM_MODEL`                | LLM model name (default: `claude-4-sonnet-20250514`)                                |
-| `SMTP_HOST`                | SMTP server host (default: `smtp.porkbun.com`)                                      |
-| `SMTP_PORT`                | SMTP server port (default: `587`)                                                   |
-| `SMTP_USER`                | SMTP account username/email                                                         |
-| `SMTP_PASS`                | SMTP account password                                                               |
-| `NOTIFY_TO`                | Where to send digests (can be same as SMTP_USER)                                    |
-| `JOB_KEYWORDS`             | Comma-separated search terms                                                        |
-| `JOB_LOCATION`             | e.g. `Boston, MA`                                                                   |
-| `MIN_FIT_SCORE`            | Minimum score to include in digest (default: 6)                                     |
-| `SCRAPE_TIME`              | Daily run time in 24h format (default: `08:00`)                                     |
-| `PIPELINE_STAGES_NOW`      | Comma-separated stages for `--now` (default: `scrape,score,digest,outreach`)        |
-| `PIPELINE_STAGES_SCHEDULE` | Comma-separated stages for scheduled runs (default: `scrape,score,digest,outreach`) |
-| `LINKEDIN_STORAGE_STATE`   | Path to saved LinkedIn session (default: `.auth/linkedin_state.json`)               |
-| `LINKEDIN_USERNAME`        | LinkedIn login email/username (required for headless login)                         |
-| `LINKEDIN_PASSWORD`        | LinkedIn login password (required for headless login)                               |
-| `OUTREACH_TARGETS`         | Comma-separated list: `recruiter,hiring_manager,alumni` (default: all)              |
+| Variable                      | What to set                                                                         |
+|-------------------------------|-------------------------------------------------------------------------------------|
+| `ANTHROPIC_API_KEY`           | your anthropic api key                                                              |
+| `LLM_MODEL`                   | LLM model name (default: `claude-haiku-4-5`)                                        |
+| `LLM_TIMEOUT_SECONDS`         | Per-job LLM timeout in seconds (default: `180`)                                     |
+| `AGENT_BATCH_SIZE`            | Number of concurrent requests to LLM for scoring and analysis (default: `3`)        |
+| `SMTP_HOST`                   | SMTP server host (default: `smtp.porkbun.com`)                                      |
+| `SMTP_PORT`                   | SMTP server port (default: `587`)                                                   |
+| `SMTP_USER`                   | SMTP account username/email                                                         |
+| `SMTP_PASS`                   | SMTP account password                                                               |
+| `NOTIFY_TO`                   | Where to send digests (can be same as SMTP_USER)                                    |
+| `JOB_KEYWORDS`                | Comma-separated search terms                                                        |
+| `JOB_LOCATION`                | e.g. `Boston, MA`                                                                   |
+| `MIN_FIT_SCORE`               | Minimum score to include in digest (default: 6)                                     |
+| `SCRAPE_TIME`                 | Daily run time in 24h format (default: `08:00`)                                     |
+| `PIPELINE_STAGES_NOW`         | Comma-separated stages for `--now` (default: `scrape,score,digest,outreach`)        |
+| `PIPELINE_STAGES_SCHEDULE`    | Comma-separated stages for scheduled runs (default: `scrape,score,digest,outreach`) |
+| `LINKEDIN_STORAGE_STATE`      | Path to saved LinkedIn session (default: `.auth/linkedin_state.json`)               |
+| `LINKEDIN_USERNAME`           | LinkedIn login email/username (required for headless login)                         |
+| `LINKEDIN_PASSWORD`           | LinkedIn login password (required for headless login)                               |
+| `LINKEDIN_ENRICH_CONCURRENCY` | Number of concurrent detail pages during enrichment (default: `5`)                  |
+| `LINKEDIN_MAX_PAGES`          | Max LinkedIn pages to scrape per keyword (default: all pages)                       |
+| `OUTREACH_TARGETS`            | Comma-separated list: `recruiter,hiring_manager,alumni` (default: all)              |
 
 ### 2. Update your resume variants
 
@@ -201,6 +205,9 @@ PIPELINE_STAGES_NOW="scrape,score"
 PIPELINE_STAGES_SCHEDULE="scrape,score"
 ```
 
+Flags never enable stages that are disabled in `PIPELINE_STAGES_NOW`. For example,
+`--digest-only` will error if `digest` is not listed.
+
 ### Phase 3: Inspect + Debug
 
 ```bash
@@ -218,6 +225,16 @@ docker-compose run --rm job-search python inspect_db.py --stats
 
 # Tail live logs
 docker-compose logs -f job-search
+```
+
+### Phase 4: Enrich missing descriptions
+
+```bash
+# Fill missing LinkedIn descriptions in the DB
+docker-compose run --rm job-search python main.py --enrich-missing
+
+# Limit to 50 jobs
+docker-compose run --rm job-search python main.py --enrich-missing --enrich-limit 50
 ```
 
 ---

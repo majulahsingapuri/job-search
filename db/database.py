@@ -162,6 +162,35 @@ def get_unscored_jobs() -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def get_jobs_missing_descriptions(
+    source: str | None = None, limit: int | None = None
+) -> list[dict]:
+    query = """
+        SELECT *
+        FROM jobs
+        WHERE (description IS NULL OR TRIM(description) = '')
+    """
+    params: list[object] = []
+    if source:
+        query += " AND source = ?"
+        params.append(source)
+    query += " ORDER BY date_found DESC"
+    if limit is not None and limit > 0:
+        query += " LIMIT ?"
+        params.append(limit)
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_job_description(job_id: str, description: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE jobs SET description=? WHERE id=?",
+            (description, job_id),
+        )
+
+
 def update_job_agent_results(
     job_id: str,
     fit_score: float,

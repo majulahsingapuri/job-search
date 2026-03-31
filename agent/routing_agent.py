@@ -13,6 +13,7 @@ Returns structured JSON — all fields written to SQLite by pipeline.py.
 from enum import Enum
 import json
 import asyncio
+import os
 from typing import Annotated, Tuple
 from pydantic_ai import Agent
 from pydantic import BaseModel, Field
@@ -21,6 +22,8 @@ from rich.console import Console
 from config.resumes import RESUME_VARIANTS
 
 console = Console()
+LLM_MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5")
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))
 
 CANDIDATE_PROFILE = """
 Name: Bhargav Singapuri
@@ -111,7 +114,7 @@ class LLMResponse(BaseModel):
         description="2-3 sentences: why this score, what aligns, what's missing"
     )
     resume_variant: ResumeVariant
-    resume_reasoning: str = (Field(description="1 sentence: why this variant"),)
+    resume_reasoning: str = Field(description="1 sentence: why this variant")
     outreach_draft: str = Field(
         description="LinkedIn cold note, max 300 chars, personalised to role + company"
     )
@@ -127,7 +130,7 @@ async def score_job_async(job: dict) -> tuple[dict, dict | None]:
     Async so batches can run concurrently.
     """
     client = Agent(
-        "anthropic:claude-4-sonnet-20250514",
+        f"anthropic:{LLM_MODEL}",
         system_prompt=SYSTEM_PROMPT,
         output_type=LLMResponse,
         model_settings=AnthropicModelSettings(anthropic_cache_instructions=True),
@@ -145,9 +148,12 @@ async def score_job_async(job: dict) -> tuple[dict, dict | None]:
     try:
         # Run blocking SDK call in thread pool so we don't block the event loop
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: client.run_sync(f"Analyse this job:\n\n{job_text}"),
+        response = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: client.run_sync(f"Analyse this job:\n\n{job_text}"),
+            ),
+            timeout=LLM_TIMEOUT_SECONDS,
         )
 
         return job, response.output.model_dump()
@@ -155,6 +161,11 @@ async def score_job_async(job: dict) -> tuple[dict, dict | None]:
     except json.JSONDecodeError as e:
         console.log(
             f"  [red]JSON parse error — {job['title']} @ {job['company']}: {e}[/red]"
+        )
+        return job, None
+    except asyncio.TimeoutError:
+        console.log(
+            f"  [red]LLM timeout after {LLM_TIMEOUT_SECONDS}s — {job['title']} @ {job['company']}[/red]"
         )
         return job, None
     except Exception as e:

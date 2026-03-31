@@ -5,6 +5,7 @@ Uses Playwright in headless mode to handle JS-rendered content.
 """
 
 import asyncio
+import os
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from rich.console import Console
@@ -91,6 +92,22 @@ async def scrape_linkedin(
     {title, company, location, url, source, description}
     """
     jobs = []
+    try:
+        enrich_concurrency = int(os.getenv("LINKEDIN_ENRICH_CONCURRENCY", "5"))
+    except ValueError:
+        enrich_concurrency = 5
+    if enrich_concurrency < 1:
+        enrich_concurrency = 1
+
+    max_pages_raw = os.getenv("LINKEDIN_MAX_PAGES", "").strip()
+    max_pages: int | None = None
+    if max_pages_raw:
+        try:
+            max_pages = int(max_pages_raw)
+            if max_pages < 1:
+                max_pages = None
+        except ValueError:
+            max_pages = None
     seen_urls: set[str] = set()
     auth_selectors = {
         "card": "div.job-card-container.job-card-list",
@@ -125,6 +142,7 @@ async def scrape_linkedin(
         for keyword in keywords:
             console.log(f"[cyan]LinkedIn:[/cyan] Scraping '{keyword}' in '{location}'")
             start = 0
+            pages_scraped = 0
 
             while True:
                 url = build_linkedin_url(keyword, location, start=start)
@@ -246,6 +264,13 @@ async def scrape_linkedin(
                             continue
 
                     start += 25
+                    pages_scraped += 1
+                    if max_pages is not None and pages_scraped >= max_pages:
+                        console.log(
+                            f"  Reached page limit for '{keyword}' "
+                            f"(pages={pages_scraped})."
+                        )
+                        break
                     # Rate limit courtesy pause between pages
                     await asyncio.sleep(3)
 
@@ -258,42 +283,92 @@ async def scrape_linkedin(
                     console.log(f"  [red]Error: {e}[/red]")
                     break
 
-        jobs = await enrich_job_descriptions(jobs, context)
+        jobs = await enrich_job_descriptions(
+            jobs, context, concurrency=enrich_concurrency
+        )
         await browser.close()
 
     console.log(f"[green]LinkedIn:[/green] {len(jobs)} total jobs collected")
     return jobs
 
 
-async def enrich_job_descriptions(jobs: list[dict], context) -> list[dict]:
+async def enrich_linkedin_descriptions(
+    jobs: list[dict], headless: bool = True, concurrency: int = 5
+) -> list[dict]:
+    if not jobs:
+        return []
+    if concurrency < 1:
+        concurrency = 1
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=headless, args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
+        storage_state = get_linkedin_storage_state_path(
+            default_path=DEFAULT_LINKEDIN_STORAGE_STATE
+        )
+        context, _ = await _create_context(browser, storage_state)
+        enriched = await enrich_job_descriptions(
+            jobs, context, concurrency=concurrency
+        )
+        await browser.close()
+
+    return enriched
+
+
+async def enrich_job_descriptions(
+    jobs: list[dict], context, concurrency: int = 5
+) -> list[dict]:
     """Enrich a list of jobs reusing an existing browser context."""
-    enriched = []
     total = len(jobs)
     processed = 0
+    lock = asyncio.Lock()
+    semaphore = asyncio.Semaphore(concurrency)
+
     console.log(f"  Enriching 0/{total}")
-    for job in jobs:
+
+    async def _enrich_job(job: dict) -> dict:
+        nonlocal processed
+
         if not job.get("url"):
-            enriched.append(job)
+            async with lock:
+                processed += 1
+                if processed % 10 == 0 or processed == total:
+                    console.log(f"  Enriched {processed}/{total}")
+            return job
+
+        async with semaphore:
+            page = await context.new_page()
+            try:
+                await page.goto(
+                    job["url"], timeout=20000, wait_until="domcontentloaded"
+                )
+                await page.wait_for_timeout(2000)
+
+                selectors = [
+                    "div.show-more-less-html__markup",
+                    "[data-sdui-component*='aboutTheJob'] [data-testid='expandable-text-box']",
+                    "[data-sdui-component*='aboutTheJob']",
+                ]
+                desc_el = None
+                for selector in selectors:
+                    desc_el = await page.query_selector(selector)
+                    if desc_el:
+                        break
+                if desc_el:
+                    job["description"] = (await desc_el.inner_text()).strip()[:3000]
+            except Exception as e:
+                console.log(
+                    f"  [yellow]Enrich failed for {job['title']} @ {job['company']}: {e}[/yellow]"
+                )
+            finally:
+                await page.close()
+
+        async with lock:
             processed += 1
             if processed % 10 == 0 or processed == total:
                 console.log(f"  Enriched {processed}/{total}")
-            continue
-        page = await context.new_page()
-        try:
-            await page.goto(job["url"], timeout=20000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(2000)
-            desc_el = await page.query_selector("div.show-more-less-html__markup")
-            if desc_el:
-                job["description"] = (await desc_el.inner_text()).strip()[:3000]
-        except Exception as e:
-            console.log(
-                f"  [yellow]Enrich failed for {job['title']} @ {job['company']}: {e}[/yellow]"
-            )
-        finally:
-            await page.close()
-        await asyncio.sleep(1)
-        enriched.append(job)
-        processed += 1
-        if processed % 10 == 0 or processed == total:
-            console.log(f"  Enriched {processed}/{total}")
-    return enriched
+        return job
+
+    enriched = await asyncio.gather(*[_enrich_job(job) for job in jobs])
+    return list(enriched)

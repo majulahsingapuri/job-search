@@ -53,18 +53,18 @@ async def run_routing_pipeline() -> dict:
 
         for i in range(0, len(jobs), BATCH_SIZE):
             batch = jobs[i : i + BATCH_SIZE]
-            batch_results = await asyncio.gather(
-                *[score_job_async(j) for j in batch],
-                return_exceptions=True,
-            )
+            tasks = [asyncio.create_task(score_job_async(j)) for j in batch]
+            for coro in asyncio.as_completed(tasks):
+                try:
+                    item = await coro
+                except Exception:
+                    processed += 1
+                    errors += 1
+                    progress.advance(task)
+                    continue
 
-            for item in batch_results:
                 processed += 1
                 progress.advance(task)
-
-                if isinstance(item, Exception):
-                    errors += 1
-                    continue
 
                 job, result = item
                 if result is None:

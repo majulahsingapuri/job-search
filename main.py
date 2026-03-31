@@ -27,8 +27,16 @@ from rich.table import Table
 
 load_dotenv()
 
-from db.database import init_db, insert_job, log_scrape_run, get_jobs_scraped_on
+from db.database import (
+    init_db,
+    insert_job,
+    log_scrape_run,
+    get_jobs_scraped_on,
+    get_jobs_missing_descriptions,
+    update_job_description,
+)
 from scraper.linkedin import scrape_linkedin
+from scraper.linkedin import enrich_linkedin_descriptions
 from scraper.simplify import scrape_simplify
 from scraper.hn import scrape_hn
 from agent.pipeline import run_routing_pipeline
@@ -232,6 +240,52 @@ async def run_outreach_for_date(
     )
 
 
+async def run_enrich_missing_descriptions(
+    source: str,
+    limit: int | None = None,
+    headful: bool = False,
+) -> None:
+    jobs = get_jobs_missing_descriptions(source=source, limit=limit)
+    total = len(jobs)
+    if total == 0:
+        console.log("[green]No jobs with missing descriptions found.[/green]")
+        return
+
+    if source != "linkedin":
+        console.log(
+            f"[red]Enrichment for source '{source}' is not supported yet.[/red]"
+        )
+        return
+
+    console.log(
+        f"[cyan]LinkedIn:[/cyan] Enriching descriptions for {total} jobs"
+    )
+    try:
+        enrich_concurrency = int(os.getenv("LINKEDIN_ENRICH_CONCURRENCY", "5"))
+    except ValueError:
+        enrich_concurrency = 5
+    if enrich_concurrency < 1:
+        enrich_concurrency = 1
+
+    enriched = await enrich_linkedin_descriptions(
+        jobs, headless=not headful, concurrency=enrich_concurrency
+    )
+
+    updated = 0
+    skipped = 0
+    for job in enriched:
+        description = (job.get("description") or "").strip()
+        if description:
+            update_job_description(job["id"], description)
+            updated += 1
+        else:
+            skipped += 1
+
+    console.log(
+        f"[green]Enrichment complete: {updated} updated, {skipped} still empty.[/green]"
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Job Agent — scrape, score, digest, and run LinkedIn outreach."
@@ -260,6 +314,22 @@ def _build_parser() -> argparse.ArgumentParser:
         "--outreach-date",
         type=_parse_outreach_date_arg,
         help="Date for --outreach-only in YYYY-MM-DD format.",
+    )
+    parser.add_argument(
+        "--enrich-missing",
+        action="store_true",
+        help="Enrich missing job descriptions from their source (LinkedIn only).",
+    )
+    parser.add_argument(
+        "--enrich-source",
+        choices=["linkedin"],
+        default="linkedin",
+        help="Source to enrich descriptions for (default: linkedin).",
+    )
+    parser.add_argument(
+        "--enrich-limit",
+        type=int,
+        help="Limit number of jobs to enrich (default: all).",
     )
     parser.add_argument(
         "--headful",
@@ -291,6 +361,12 @@ if __name__ == "__main__":
 
     if args.outreach_date and not args.outreach_only:
         parser.error("--outreach-date requires --outreach-only")
+    if args.enrich_missing and (
+        args.now or args.score_only or args.digest_only or args.outreach_only
+    ):
+        parser.error(
+            "--enrich-missing cannot be combined with other run modes."
+        )
 
     SELECTED_SCRAPERS = _parse_selected_scrapers(args)
     try:
@@ -302,6 +378,17 @@ if __name__ == "__main__":
         )
     except ValueError as exc:
         console.log(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if args.score_only and "score" not in STAGES_NOW:
+        console.log(
+            "[red]--score-only requires 'score' in PIPELINE_STAGES_NOW.[/red]"
+        )
+        sys.exit(1)
+    if args.digest_only and "digest" not in STAGES_NOW:
+        console.log(
+            "[red]--digest-only requires 'digest' in PIPELINE_STAGES_NOW.[/red]"
+        )
         sys.exit(1)
     console.log("[bold green]Job Agent started[/bold green]")
     console.log(f"  Keywords : {KEYWORDS}")
@@ -323,6 +410,7 @@ if __name__ == "__main__":
                 skip_score=True,
                 selected=SELECTED_SCRAPERS,
                 headful=headful,
+                stages=STAGES_NOW,
             )
         )
         sys.exit(0)
@@ -339,6 +427,19 @@ if __name__ == "__main__":
         )
         sys.exit(0)
 
+    if args.enrich_missing:
+        console.log(
+            "[yellow]--enrich-missing: enriching job descriptions[/yellow]"
+        )
+        asyncio.run(
+            run_enrich_missing_descriptions(
+                source=args.enrich_source,
+                limit=args.enrich_limit,
+                headful=headful,
+            )
+        )
+        sys.exit(0)
+
     if args.score_only:
         console.log(
             "[yellow]--score-only: scoring unscored jobs then sending digest[/yellow]"
@@ -348,6 +449,7 @@ if __name__ == "__main__":
                 skip_scrape=True,
                 selected=SELECTED_SCRAPERS,
                 headful=headful,
+                stages=STAGES_NOW,
             )
         )
         sys.exit(0)
