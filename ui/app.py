@@ -154,9 +154,9 @@ def _query_jobs(
     if filters["q"]:
         q = f"%{filters['q'].lower()}%"
         where.append(
-            "(LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(location) LIKE ?)"
+            "(LOWER(title) LIKE ? OR LOWER(company) LIKE ?)"
         )
-        params.extend([q, q, q])
+        params.extend([q, q])
 
     if filters["min_fit_score"] is not None:
         where.append("fit_score >= ?")

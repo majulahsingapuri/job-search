@@ -43,6 +43,8 @@ KEYWORDS = [
 LOCATION = os.getenv("JOB_LOCATION", "Boston, MA")
 SCRAPE_TIME = os.getenv("SCRAPE_TIME", "08:00")
 
+ALLOWED_STAGES = ["scrape", "score", "digest", "outreach"]
+
 
 async def _run_scraper(source: str, coro) -> tuple[int, int]:
     try:
@@ -65,6 +67,26 @@ def _parse_selected_scrapers(args: argparse.Namespace) -> list[str]:
     if args.hn:
         selected.append("hn")
     return selected or ["linkedin", "simplify", "hn"]
+
+
+def _parse_stage_list(value: str | None, label: str) -> list[str]:
+    if not value or not value.strip():
+        return ALLOWED_STAGES.copy()
+    parts = [p.strip().lower() for p in value.split(",") if p.strip()]
+    unknown = sorted({p for p in parts if p not in ALLOWED_STAGES})
+    if unknown:
+        allowed = ", ".join(ALLOWED_STAGES)
+        invalid = ", ".join(unknown)
+        raise ValueError(
+            f"{label} contains invalid stage(s): {invalid}. Allowed: {allowed}."
+        )
+    stages: list[str] = []
+    seen: set[str] = set()
+    for p in parts:
+        if p not in seen:
+            stages.append(p)
+            seen.add(p)
+    return stages or ALLOWED_STAGES.copy()
 
 
 def _parse_outreach_date_arg(value: str) -> str:
@@ -129,32 +151,48 @@ async def run_pipeline(
     selected: list[str] | None = None,
     headful: bool = False,
     outreach_targets: list[str] | None = None,
+    stages: list[str] | None = None,
 ):
+    stages = stages or ALLOWED_STAGES.copy()
+    do_scrape = "scrape" in stages and not skip_scrape
+    do_score = "score" in stages and not skip_score
+    do_digest = "digest" in stages
+    do_outreach = "outreach" in stages
+
     console.rule(f"[bold blue]Job Agent — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    console.log(f"[dim]Stages: {', '.join(stages)}[/dim]")
 
     # ── Stage 1: Scrape ───────────────────────────────────────────────────────
-    if not skip_scrape:
+    if do_scrape:
         total_new = await _scrape_stage(
             selected or ["linkedin", "simplify", "hn"], headful=headful
         )
-        if total_new == 0 and not skip_score:
+        if total_new == 0 and do_score:
             console.log("[yellow]No new jobs scraped.[/yellow]")
             # Still fall through to digest in case there are unnotified scored jobs
 
     # ── Stage 2: Score ────────────────────────────────────────────────────────
-    if not skip_score:
+    if do_score:
         await run_routing_pipeline()
 
     # ── Stage 3: Digest ───────────────────────────────────────────────────────
-    result = send_digest()
-    if result["error"]:
-        console.log(f"[red]Digest error: {result['error']}[/red]")
+    result = None
+    if do_digest:
+        result = send_digest()
+        if result["error"]:
+            console.log(f"[red]Digest error: {result['error']}[/red]")
 
-    if result.get("sent") and result.get("jobs"):
-        console.log("[cyan]LinkedIn:[/cyan] Starting outreach stage...")
-        await run_linkedin_outreach(
-            result["jobs"], headless=not headful, targets=outreach_targets
-        )
+    # ── Stage 4: Outreach ─────────────────────────────────────────────────────
+    if do_outreach:
+        if not do_digest:
+            console.log(
+                "[yellow]Outreach skipped because digest stage is disabled.[/yellow]"
+            )
+        elif result and result.get("sent") and result.get("jobs"):
+            console.log("[cyan]LinkedIn:[/cyan] Starting outreach stage...")
+            await run_linkedin_outreach(
+                result["jobs"], headless=not headful, targets=outreach_targets
+            )
 
     console.rule("[dim]Done[/dim]")
 
@@ -163,10 +201,14 @@ def run_pipeline_sync(
     selected: list[str],
     headful: bool = False,
     outreach_targets: list[str] | None = None,
+    stages: list[str] | None = None,
 ):
     asyncio.run(
         run_pipeline(
-            selected=selected, headful=headful, outreach_targets=outreach_targets
+            selected=selected,
+            headful=headful,
+            outreach_targets=outreach_targets,
+            stages=stages,
         )
     )
 
@@ -251,11 +293,23 @@ if __name__ == "__main__":
         parser.error("--outreach-date requires --outreach-only")
 
     SELECTED_SCRAPERS = _parse_selected_scrapers(args)
+    try:
+        STAGES_NOW = _parse_stage_list(
+            os.getenv("PIPELINE_STAGES_NOW"), "PIPELINE_STAGES_NOW"
+        )
+        STAGES_SCHEDULE = _parse_stage_list(
+            os.getenv("PIPELINE_STAGES_SCHEDULE"), "PIPELINE_STAGES_SCHEDULE"
+        )
+    except ValueError as exc:
+        console.log(f"[red]{exc}[/red]")
+        sys.exit(1)
     console.log("[bold green]Job Agent started[/bold green]")
     console.log(f"  Keywords : {KEYWORDS}")
     console.log(f"  Location : {LOCATION}")
     console.log(f"  Schedule : daily at {SCRAPE_TIME}")
     console.log(f"  Scrapers : {', '.join(SELECTED_SCRAPERS)}")
+    console.log(f"  Stages (now) : {', '.join(STAGES_NOW)}")
+    console.log(f"  Stages (schedule) : {', '.join(STAGES_SCHEDULE)}")
 
     headful = args.headful
 
@@ -299,12 +353,16 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.now:
-        console.log("[yellow]--now: running full pipeline immediately[/yellow]")
-        asyncio.run(run_pipeline(selected=SELECTED_SCRAPERS, headful=headful))
+        console.log("[yellow]--now: running pipeline immediately[/yellow]")
+        asyncio.run(
+            run_pipeline(
+                selected=SELECTED_SCRAPERS, headful=headful, stages=STAGES_NOW
+            )
+        )
         sys.exit(0)
 
     schedule.every().day.at(SCRAPE_TIME).do(
-        run_pipeline_sync, SELECTED_SCRAPERS, headful
+        run_pipeline_sync, SELECTED_SCRAPERS, headful, None, STAGES_SCHEDULE
     )
     console.log(f"[green]Scheduler running. Next run at {SCRAPE_TIME}[/green]")
     while True:

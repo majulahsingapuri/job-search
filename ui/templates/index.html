@@ -34,7 +34,14 @@
     </div>
 
     <div>
-      <label for="location">Location</label>
+      <label for="location_search">Location</label>
+      <input
+        id="location_search"
+        type="search"
+        class="filter-search"
+        placeholder="Search locations"
+        autocomplete="off"
+      />
       <div class="checklist" id="location">
         {% for loc in locations %}
         <label>
@@ -47,7 +54,7 @@
 
     <div>
       <label for="q">Search</label>
-      <input id="q" name="q" placeholder="Title, company, location" value="{{ filters.q }}" />
+      <input id="q" name="q" placeholder="Title or company" value="{{ filters.q }}" />
     </div>
 
     <div>
@@ -296,5 +303,21 @@
       }
     });
   });
+
+  const locationSearch = document.querySelector("#location_search");
+  const locationChecklist = document.querySelector("#location");
+  if (locationSearch && locationChecklist) {
+    const locationLabels = Array.from(locationChecklist.querySelectorAll("label"));
+    const applyLocationFilter = () => {
+      const query = locationSearch.value.trim().toLowerCase();
+      locationLabels.forEach((label) => {
+        const text = (label.textContent || "").toLowerCase();
+        label.style.display = text.includes(query) ? "flex" : "none";
+      });
+    };
+
+    locationSearch.addEventListener("input", applyLocationFilter);
+    applyLocationFilter();
+  }
 </script>
 {% endblock %}

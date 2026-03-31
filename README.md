@@ -51,6 +51,7 @@ job-search/
 ├── .env.example
 ├── scraper/
 │   ├── linkedin.py          # Playwright scraper
+│   ├── linkedin_auth.py     # LinkedIn login + session management
 │   ├── simplify.py          # Playwright scraper
 │   └── hn.py                # HN Algolia API (no browser)
 ├── agent/
@@ -77,23 +78,25 @@ cp .env.example .env
 
 Edit `.env` (make sure to add your LLM provider API key):
 
-| Variable                 | What to set                                                            |
-|--------------------------|------------------------------------------------------------------------|
-| `ANTHROPIC_API_KEY`      | your anthropic api key                                                 |
-| `LLM_MODEL`              | LLM model name (default: `claude-4-sonnet-20250514`)                   |
-| `SMTP_HOST`              | SMTP server host (default: `smtp.porkbun.com`)                         |
-| `SMTP_PORT`              | SMTP server port (default: `587`)                                      |
-| `SMTP_USER`              | SMTP account username/email                                            |
-| `SMTP_PASS`              | SMTP account password                                                  |
-| `NOTIFY_TO`              | Where to send digests (can be same as SMTP_USER)                       |
-| `JOB_KEYWORDS`           | Comma-separated search terms                                           |
-| `JOB_LOCATION`           | e.g. `Boston, MA`                                                      |
-| `MIN_FIT_SCORE`          | Minimum score to include in digest (default: 6)                        |
-| `SCRAPE_TIME`            | Daily run time in 24h format (default: `08:00`)                        |
-| `LINKEDIN_STORAGE_STATE` | Path to saved LinkedIn session (default: `.auth/linkedin_state.json`)  |
-| `LINKEDIN_USERNAME`      | LinkedIn login email/username (required for headless login)            |
-| `LINKEDIN_PASSWORD`      | LinkedIn login password (required for headless login)                  |
-| `OUTREACH_TARGETS`       | Comma-separated list: `recruiter,hiring_manager,alumni` (default: all) |
+| Variable                   | What to set                                                                         |
+|----------------------------|-------------------------------------------------------------------------------------|
+| `ANTHROPIC_API_KEY`        | your anthropic api key                                                              |
+| `LLM_MODEL`                | LLM model name (default: `claude-4-sonnet-20250514`)                                |
+| `SMTP_HOST`                | SMTP server host (default: `smtp.porkbun.com`)                                      |
+| `SMTP_PORT`                | SMTP server port (default: `587`)                                                   |
+| `SMTP_USER`                | SMTP account username/email                                                         |
+| `SMTP_PASS`                | SMTP account password                                                               |
+| `NOTIFY_TO`                | Where to send digests (can be same as SMTP_USER)                                    |
+| `JOB_KEYWORDS`             | Comma-separated search terms                                                        |
+| `JOB_LOCATION`             | e.g. `Boston, MA`                                                                   |
+| `MIN_FIT_SCORE`            | Minimum score to include in digest (default: 6)                                     |
+| `SCRAPE_TIME`              | Daily run time in 24h format (default: `08:00`)                                     |
+| `PIPELINE_STAGES_NOW`      | Comma-separated stages for `--now` (default: `scrape,score,digest,outreach`)        |
+| `PIPELINE_STAGES_SCHEDULE` | Comma-separated stages for scheduled runs (default: `scrape,score,digest,outreach`) |
+| `LINKEDIN_STORAGE_STATE`   | Path to saved LinkedIn session (default: `.auth/linkedin_state.json`)               |
+| `LINKEDIN_USERNAME`        | LinkedIn login email/username (required for headless login)                         |
+| `LINKEDIN_PASSWORD`        | LinkedIn login password (required for headless login)                               |
+| `OUTREACH_TARGETS`         | Comma-separated list: `recruiter,hiring_manager,alumni` (default: all)              |
 
 ### 2. Update your resume variants
 
@@ -134,10 +137,10 @@ search (outreach) requires login. Save a session once and reuse it:
 
 ```bash
 # Headless by default (uses LINKEDIN_USERNAME / LINKEDIN_PASSWORD)
-python -m scraper.linkedin --login
+python -m scraper.linkedin_auth
 
 # Interactive login with visible browser
-python -m scraper.linkedin --login --headful
+python -m scraper.linkedin_auth --headful
 ```
 
 Headless login requires `LINKEDIN_USERNAME` and `LINKEDIN_PASSWORD` in your
@@ -180,6 +183,22 @@ docker-compose run --rm job-search python main.py --outreach-only --outreach-dat
 
 # Show the browser for any stage that uses Playwright
 docker-compose run --rm job-search python main.py --now --headful
+```
+
+### Pipeline stage selection (optional)
+
+You can control which stages run for `--now` and scheduled runs using:
+
+- `PIPELINE_STAGES_NOW`
+- `PIPELINE_STAGES_SCHEDULE`
+
+Each is a comma-separated list of: `scrape,score,digest,outreach` (default: all).
+
+Example (scrape + score only):
+
+```bash
+PIPELINE_STAGES_NOW="scrape,score"
+PIPELINE_STAGES_SCHEDULE="scrape,score"
 ```
 
 ### Phase 3: Inspect + Debug

@@ -5,180 +5,70 @@ Uses Playwright in headless mode to handle JS-rendered content.
 """
 
 import asyncio
-import os
-import sys
-import time
-from pathlib import Path
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from rich.console import Console
-from dotenv import load_dotenv
 
-from utils import (
-    DEFAULT_LINKEDIN_STORAGE_STATE,
-    LINKEDIN_USER_AGENT,
-    get_linkedin_storage_state_path,
-    is_linkedin_login_page,
-)
-
-load_dotenv()
+from scraper.linkedin_auth import _create_context, _goto_with_login_fallback
+from utils import DEFAULT_LINKEDIN_STORAGE_STATE, get_linkedin_storage_state_path
 console = Console()
 
 LINKEDIN_BASE = "https://www.linkedin.com/jobs/search"
-LINKEDIN_LOGIN_URL = "https://www.linkedin.com/login"
-
-
-async def _create_context(browser, storage_state: Path | None) -> tuple:
-    if storage_state and storage_state.exists():
-        console.log(f"[cyan]LinkedIn:[/cyan] Using saved session at {storage_state}")
-        context = await browser.new_context(
-            user_agent=LINKEDIN_USER_AGENT, storage_state=str(storage_state)
-        )
-        return context, True
-
-    if storage_state:
-        console.log(
-            "[yellow]LinkedIn session not found; continuing without login.[/yellow]"
-        )
-    context = await browser.new_context(user_agent=LINKEDIN_USER_AGENT)
-    return context, False
-
-
-async def _is_two_factor_page(page) -> bool:
-    url = page.url or ""
-    if "/checkpoint/" in url or "two-step" in url or "challenge" in url:
-        return True
-    twofa_el = await page.query_selector(
-        "input[name='pin'], input[name='otp'], input[name='verificationCode'], "
-        "input#input__phone_verification_pin, input#input__email_verification_pin"
-    )
-    return twofa_el is not None
-
-
-async def _wait_for_login_success(page, timeout_ms: int = 180_000) -> bool:
-    start = time.monotonic()
-    warned_2fa = False
-    while (time.monotonic() - start) * 1000 < timeout_ms:
-        if await _is_two_factor_page(page):
-            if not warned_2fa:
-                console.log(
-                    "[yellow]LinkedIn:[/yellow] 2FA detected. Approve the login, "
-                    "then wait for the page to finish redirecting."
-                )
-                warned_2fa = True
-        elif await is_linkedin_login_page(page):
-            pass
-        else:
-            return True
-        await page.wait_for_timeout(1000)
-    return False
-
-
-async def _goto_with_login_fallback(
+async def _scroll_job_results(
     page,
-    url: str,
-    browser,
-    context,
-    used_state: bool,
-) -> tuple:
-    await page.goto(url, timeout=30000, wait_until="domcontentloaded")
-    await page.wait_for_timeout(2500)  # Let JS render
+    container_selector: str,
+    auth_card_selector: str,
+    public_card_selector: str,
+    idle_rounds: int = 3,
+    wait_ms: int = 1000,
+    step_px: int = 700,
+    max_rounds: int = 60,
+) -> bool:
+    try:
+        await page.wait_for_selector(container_selector, timeout=5000)
+    except PWTimeout:
+        return False
 
-    if used_state and await is_linkedin_login_page(page):
-        console.log(
-            "[yellow]LinkedIn session expired; falling back to public listings.[/yellow]"
+    container = await page.query_selector(container_selector)
+    if not container:
+        return False
+
+    previous_count = -1
+    previous_scroll_height = -1
+    stable_rounds = 0
+    rounds = 0
+
+    while True:
+        scroll_top = await container.evaluate("(el) => el.scrollTop")
+        scroll_height = await container.evaluate("(el) => el.scrollHeight")
+        next_scroll_top = min(scroll_top + step_px, scroll_height)
+        await container.evaluate(
+            "(el, value) => { el.scrollTop = value; }", next_scroll_top
         )
-        await context.close()
-        context, used_state = await _create_context(browser, None)
-        page = await context.new_page()
-        await page.goto(url, timeout=30000, wait_until="domcontentloaded")
-        await page.wait_for_timeout(2500)
+        await page.wait_for_timeout(wait_ms)
 
-    return page, context, used_state
+        auth_cards = await page.query_selector_all(auth_card_selector)
+        public_cards = await page.query_selector_all(public_card_selector)
+        total_cards = max(len(auth_cards), len(public_cards))
+        new_scroll_height = await container.evaluate("(el) => el.scrollHeight")
 
-
-async def login_linkedin(headless: bool = True) -> None:
-    storage_state = get_linkedin_storage_state_path(
-        default_path=DEFAULT_LINKEDIN_STORAGE_STATE
-    )
-    storage_state.parent.mkdir(parents=True, exist_ok=True)
-    username = os.getenv("LINKEDIN_USERNAME", "").strip()
-    password = os.getenv("LINKEDIN_PASSWORD", "").strip()
-
-    if headless and (not username or not password):
-        console.log(
-            "[red]LinkedIn login: headless mode requires LINKEDIN_USERNAME and "
-            "LINKEDIN_PASSWORD. Re-run with --headful for interactive login.[/red]"
-        )
-        return
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=headless, args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
-        context = await browser.new_context(user_agent=LINKEDIN_USER_AGENT)
-        page = await context.new_page()
-
-        console.log("[cyan]LinkedIn:[/cyan] Opening login page...")
-        await page.goto(LINKEDIN_LOGIN_URL, wait_until="domcontentloaded")
-        if headless:
-            await page.fill(
-                "input[name='session_key'], input#username", username, timeout=10000
-            )
-            await page.fill(
-                "input[name='session_password'], input#password",
-                password,
-                timeout=10000,
-            )
-            await page.click("button[type='submit']", timeout=10000)
-            try:
-                await page.wait_for_load_state("domcontentloaded", timeout=30000)
-            except PWTimeout:
-                pass
-            await page.wait_for_timeout(2000)
-            if await _is_two_factor_page(page):
-                console.log(
-                    "[red]LinkedIn login requires 2FA. "
-                    "Use --headful to complete the login interactively.[/red]"
-                )
-                await browser.close()
-                return
-            if await is_linkedin_login_page(page):
-                console.log(
-                    "[red]LinkedIn login failed in headless mode. "
-                    "If you have MFA, use --headful to login interactively.[/red]"
-                )
-                await browser.close()
-                return
+        at_bottom = next_scroll_top >= new_scroll_height
+        if total_cards == previous_count and new_scroll_height == previous_scroll_height:
+            stable_rounds += 1
         else:
-            console.log(
-                "[cyan]LinkedIn:[/cyan] Complete login in the browser, then press Enter here."
-            )
-            input()
-            try:
-                await page.wait_for_load_state("networkidle", timeout=30000)
-            except PWTimeout:
-                pass
-            if await is_linkedin_login_page(page) or await _is_two_factor_page(page):
-                console.log(
-                    "[yellow]LinkedIn:[/yellow] Waiting for login to complete..."
-                )
-                if not await _wait_for_login_success(page):
-                    console.log(
-                        "[red]LinkedIn login timed out. "
-                        "Try again and ensure the login completes before pressing Enter.[/red]"
-                    )
-                    await browser.close()
-                    return
+            stable_rounds = 0
+            previous_count = total_cards
+            previous_scroll_height = new_scroll_height
 
-        await context.storage_state(path=str(storage_state))
-        await browser.close()
+        rounds += 1
+        if (stable_rounds >= idle_rounds and at_bottom) or rounds >= max_rounds:
+            break
 
-    console.log(f"[green]LinkedIn:[/green] Session saved to {storage_state}")
+    return True
 
 
 # Maps our keyword to LinkedIn's URL-encoded equivalent
-def build_linkedin_url(keyword: str, location: str) -> str:
+def build_linkedin_url(keyword: str, location: str, start: int | None = None) -> str:
     import urllib.parse
 
     params = {
@@ -188,6 +78,8 @@ def build_linkedin_url(keyword: str, location: str) -> str:
         "f_JT": "I",  # Internship — change to "F" for full-time or remove
         "sortBy": "DD",  # Most recent first
     }
+    if start is not None:
+        params["start"] = start
     return f"{LINKEDIN_BASE}?{urllib.parse.urlencode(params)}"
 
 
@@ -199,6 +91,26 @@ async def scrape_linkedin(
     {title, company, location, url, source, description}
     """
     jobs = []
+    seen_urls: set[str] = set()
+    auth_selectors = {
+        "card": "div.job-card-container.job-card-list",
+        "title": "a.job-card-list__title--link",
+        "company": "div.artdeco-entity-lockup__subtitle span",
+        "location": (
+            "div.artdeco-entity-lockup__caption "
+            "ul.job-card-container__metadata-wrapper li span"
+        ),
+        "link": "a.job-card-list__title--link",
+        "label": "authenticated",
+    }
+    public_selectors = {
+        "card": "div.job-search-card",
+        "title": "h3.base-search-card__title",
+        "company": "h4.base-search-card__subtitle",
+        "location": "span.job-search-card__location",
+        "link": "a.base-card__full-link",
+        "label": "public",
+    }
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -211,78 +123,140 @@ async def scrape_linkedin(
         page = await context.new_page()
 
         for keyword in keywords:
-            url = build_linkedin_url(keyword, location)
             console.log(f"[cyan]LinkedIn:[/cyan] Scraping '{keyword}' in '{location}'")
+            start = 0
 
-            try:
-                page, context, used_state = await _goto_with_login_fallback(
-                    page, url, browser, context, used_state
-                )
+            while True:
+                url = build_linkedin_url(keyword, location, start=start)
 
-                # Scroll to load more results
-                for _ in range(3):
-                    await page.keyboard.press("End")
-                    await page.wait_for_timeout(1000)
+                try:
+                    page, context, used_state = await _goto_with_login_fallback(
+                        page, url, browser, context, used_state
+                    )
 
-                cards = await page.query_selector_all("div.job-search-card")
-                console.log(f"  Found {len(cards)} cards")
+                    # Scroll the results list to load all cards
+                    scroll_container_selector = (
+                        "#main > div > div.scaffold-layout__list-detail-inner."
+                        "scaffold-layout__list-detail-inner--grow > div.scaffold-layout__list > div"
+                    )
+                    scrolled = await _scroll_job_results(
+                        page,
+                        scroll_container_selector,
+                        auth_selectors["card"],
+                        public_selectors["card"],
+                    )
+                    if not scrolled:
+                        for _ in range(3):
+                            await page.keyboard.press("End")
+                            await page.wait_for_timeout(1000)
 
-                for card in cards:
-                    try:
-                        title_el = await card.query_selector(
-                            "h3.base-search-card__title"
+                    if used_state:
+                        auth_cards = await page.query_selector_all(
+                            auth_selectors["card"]
                         )
-                        company_el = await card.query_selector(
-                            "h4.base-search-card__subtitle"
-                        )
-                        location_el = await card.query_selector(
-                            "span.job-search-card__location"
-                        )
-                        link_el = await card.query_selector("a.base-card__full-link")
-
-                        title = (
-                            (await title_el.inner_text()).strip() if title_el else ""
-                        )
-                        company = (
-                            (await company_el.inner_text()).strip()
-                            if company_el
-                            else ""
-                        )
-                        loc = (
-                            (await location_el.inner_text()).strip()
-                            if location_el
-                            else ""
-                        )
-                        job_url = await link_el.get_attribute("href") if link_el else ""
-
-                        # Clean tracking params from URL
-                        job_url = job_url.split("?")[0] if job_url else ""
-
-                        if title and company:
-                            # Skip aggregator postings
-                            if company in ["Lensa", "WayUp", "Jobs via Dice"]:
-                                continue
-                            jobs.append(
-                                {
-                                    "title": title,
-                                    "company": company,
-                                    "location": loc,
-                                    "url": job_url,
-                                    "source": "linkedin",
-                                    "description": "",  # Fetched lazily in enrichment step
-                                }
+                        if auth_cards:
+                            selectors = auth_selectors
+                            cards = auth_cards
+                        else:
+                            cards = await page.query_selector_all(
+                                public_selectors["card"]
                             )
-                    except Exception as e:
-                        console.log(f"  [yellow]Card parse error: {e}[/yellow]")
-                        continue
+                            selectors = public_selectors
+                    else:
+                        public_cards = await page.query_selector_all(
+                            public_selectors["card"]
+                        )
+                        if public_cards:
+                            selectors = public_selectors
+                            cards = public_cards
+                        else:
+                            cards = await page.query_selector_all(
+                                auth_selectors["card"]
+                            )
+                            selectors = auth_selectors
 
-                # Rate limit courtesy pause between keywords
-                await asyncio.sleep(3)
+                    if not cards:
+                        console.log(
+                            f"  Reached end of listings for '{keyword}' "
+                            f"(start={start})."
+                        )
+                        break
 
-            except PWTimeout:
-                console.log(f"  [red]Timeout scraping LinkedIn for '{keyword}'[/red]")
-            except Exception as e:
-                console.log(f"  [red]Error: {e}[/red]")
+                    console.log(
+                        f"  Found {len(cards)} cards (start={start}, "
+                        f"{selectors['label']} selectors)"
+                    )
+
+                    for card in cards:
+                        try:
+                            title_el = await card.query_selector(selectors["title"])
+                            company_el = await card.query_selector(
+                                selectors["company"]
+                            )
+                            location_el = await card.query_selector(
+                                selectors["location"]
+                            )
+                            link_el = await card.query_selector(selectors["link"])
+
+                            title = (
+                                (await title_el.inner_text()).strip()
+                                if title_el
+                                else ""
+                            )
+                            company = (
+                                (await company_el.inner_text()).strip()
+                                if company_el
+                                else ""
+                            )
+                            loc = (
+                                (await location_el.inner_text()).strip()
+                                if location_el
+                                else ""
+                            )
+                            job_url = (
+                                await link_el.get_attribute("href") if link_el else ""
+                            )
+
+                            # Clean tracking params from URL
+                            job_url = job_url.split("?")[0] if job_url else ""
+                            if job_url.startswith("/"):
+                                job_url = f"https://www.linkedin.com{job_url}"
+
+                            if job_url and job_url in seen_urls:
+                                continue
+                            if job_url:
+                                seen_urls.add(job_url)
+
+                            if title and company:
+                                # Skip aggregator postings
+                                if company in ["Lensa", "WayUp", "Jobs via Dice"]:
+                                    continue
+                                jobs.append(
+                                    {
+                                        "title": title,
+                                        "company": company,
+                                        "location": loc,
+                                        "url": job_url,
+                                        "source": "linkedin",
+                                        "description": "",  # Fetched lazily in enrichment step
+                                    }
+                                )
+                        except Exception as e:
+                            console.log(f"  [yellow]Card parse error: {e}[/yellow]")
+                            continue
+
+                    start += 25
+                    # Rate limit courtesy pause between pages
+                    await asyncio.sleep(3)
+
+                except PWTimeout:
+                    console.log(
+                        f"  [red]Timeout scraping LinkedIn for '{keyword}'[/red]"
+                    )
+                    break
+                except Exception as e:
+                    console.log(f"  [red]Error: {e}[/red]")
+                    break
 
         jobs = await enrich_job_descriptions(jobs, context)
         await browser.close()
@@ -323,9 +297,3 @@ async def enrich_job_descriptions(jobs: list[dict], context) -> list[dict]:
         if processed % 10 == 0 or processed == total:
             console.log(f"  Enriched {processed}/{total}")
     return enriched
-
-
-if __name__ == "__main__":
-    if "--login" in sys.argv:
-        headful = "--headful" in sys.argv
-        asyncio.run(login_linkedin(headless=not headful))
