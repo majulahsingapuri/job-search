@@ -80,7 +80,8 @@ Edit `.env` (make sure to add your LLM provider API key):
 
 | Variable                      | What to set                                                                         |
 |-------------------------------|-------------------------------------------------------------------------------------|
-| `ANTHROPIC_API_KEY`           | your anthropic api key                                                              |
+| `*_API_KEY`                   | your model provider api key                                                         |
+| `LLM_PROVIDER`                | your model provider (default: `anthropic`)                                          |
 | `LLM_MODEL`                   | LLM model name (default: `claude-haiku-4-5`)                                        |
 | `LLM_TIMEOUT_SECONDS`         | Per-job LLM timeout in seconds (default: `180`)                                     |
 | `AGENT_BATCH_SIZE`            | Number of concurrent requests to LLM for scoring and analysis (default: `3`)        |

@@ -12,9 +12,12 @@ from rich.console import Console
 
 from scraper.linkedin_auth import _create_context, _goto_with_login_fallback
 from utils import DEFAULT_LINKEDIN_STORAGE_STATE, get_linkedin_storage_state_path
+
 console = Console()
 
 LINKEDIN_BASE = "https://www.linkedin.com/jobs/search"
+
+
 async def _scroll_job_results(
     page,
     container_selector: str,
@@ -54,7 +57,10 @@ async def _scroll_job_results(
         new_scroll_height = await container.evaluate("(el) => el.scrollHeight")
 
         at_bottom = next_scroll_top >= new_scroll_height
-        if total_cards == previous_count and new_scroll_height == previous_scroll_height:
+        if (
+            total_cards == previous_count
+            and new_scroll_height == previous_scroll_height
+        ):
             stable_rounds += 1
         else:
             stable_rounds = 0
@@ -208,9 +214,7 @@ async def scrape_linkedin(
                     for card in cards:
                         try:
                             title_el = await card.query_selector(selectors["title"])
-                            company_el = await card.query_selector(
-                                selectors["company"]
-                            )
+                            company_el = await card.query_selector(selectors["company"])
                             location_el = await card.query_selector(
                                 selectors["location"]
                             )
@@ -308,9 +312,7 @@ async def enrich_linkedin_descriptions(
             default_path=DEFAULT_LINKEDIN_STORAGE_STATE
         )
         context, _ = await _create_context(browser, storage_state)
-        enriched = await enrich_job_descriptions(
-            jobs, context, concurrency=concurrency
-        )
+        enriched = await enrich_job_descriptions(jobs, context, concurrency=concurrency)
         await browser.close()
 
     return enriched
@@ -340,9 +342,27 @@ async def enrich_job_descriptions(
         async with semaphore:
             page = await context.new_page()
             try:
-                await page.goto(
-                    job["url"], timeout=20000, wait_until="domcontentloaded"
-                )
+                url = job["url"]
+                try:
+                    response = await page.goto(
+                        url, timeout=20000, wait_until="domcontentloaded"
+                    )
+                except Exception as e:
+                    if "ERR_HTTP_RESPONSE_CODE_FAILURE" in str(e):
+                        await page.wait_for_timeout(1500)
+                        retry_url = url.rstrip("/") or url
+                        response = await page.goto(
+                            retry_url, timeout=40000, wait_until="load"
+                        )
+                    else:
+                        raise
+
+                if response is not None and response.status >= 400:
+                    console.log(
+                        f"  [yellow]Enrich failed for {job['title']} @ {job['company']}: HTTP {response.status}[/yellow]"
+                    )
+                    return job
+
                 await page.wait_for_timeout(2000)
 
                 selectors = [

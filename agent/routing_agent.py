@@ -13,15 +13,15 @@ Returns structured JSON — all fields written to SQLite by pipeline.py.
 from enum import Enum
 import json
 import asyncio
+import hashlib
 import os
-from typing import Annotated, Tuple
 from pydantic_ai import Agent
 from pydantic import BaseModel, Field
-from pydantic_ai.models.anthropic import AnthropicModelSettings
 from rich.console import Console
 from config.resumes import RESUME_VARIANTS
 
 console = Console()
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").lower()
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5")
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))
 
@@ -91,21 +91,34 @@ No preamble. No markdown fences. No explanation outside the JSON.
 """.strip()
 
 
+def _build_model_settings() -> dict:
+    if LLM_PROVIDER == "anthropic":
+        ttl = os.getenv("ANTHROPIC_PROMPT_CACHE_TTL", "5m").strip()
+        if ttl not in {"5m", "1h"}:
+            ttl = "5m"
+        return {"anthropic_cache_instructions": ttl}
+    if LLM_PROVIDER == "openai":
+        retention = os.getenv("OPENAI_PROMPT_CACHE_RETENTION", "24h").strip()
+        if retention not in {"in_memory", "24h"}:
+            retention = "24h"
+        cache_key = os.getenv("OPENAI_PROMPT_CACHE_KEY")
+        if not cache_key:
+            digest = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:32]
+            cache_key = f"routing-agent-system:{digest}"
+        return {
+            "openai_prompt_cache_key": cache_key,
+            "openai_prompt_cache_retention": retention,
+        }
+    return {}
+
+
+MODEL_SETTINGS = _build_model_settings()
+
+
 class ResumeVariant(str, Enum):
     ML_ENGINEER = "ml_engineer"
     DATA_SCIENTIST = "data_scientist"
     AI_RESEARCHER = "ai_researcher"
-
-
-SearchQueryTuple = Tuple[
-    Annotated[
-        str, Field(description="query to find recruiter or hiring manager at company")
-    ],
-    Annotated[str, Field(description="query to find ML/AI team lead at company")],
-    Annotated[
-        str, Field(description="query to find Northeastern or NTU alum at company")
-    ],
-]
 
 
 class LLMResponse(BaseModel):
@@ -118,7 +131,14 @@ class LLMResponse(BaseModel):
     outreach_draft: str = Field(
         description="LinkedIn cold note, max 300 chars, personalised to role + company"
     )
-    linkedin_search_queries: SearchQueryTuple
+    linkedin_search_queries: list[str] = Field(
+        min_length=3,
+        max_length=3,
+        description=(
+            "Exactly 3 queries, in order: recruiter/hiring manager at company; "
+            "ML/AI team lead at company; Northeastern or NTU alum at company"
+        ),
+    )
     red_flags: str = Field(
         description="concerns about seniority mismatch, visa sponsorship, location, or domain fit — or empty string"
     )
@@ -130,10 +150,10 @@ async def score_job_async(job: dict) -> tuple[dict, dict | None]:
     Async so batches can run concurrently.
     """
     client = Agent(
-        f"anthropic:{LLM_MODEL}",
+        f"{LLM_PROVIDER}:{LLM_MODEL}",
         system_prompt=SYSTEM_PROMPT,
         output_type=LLMResponse,
-        model_settings=AnthropicModelSettings(anthropic_cache_instructions=True),
+        model_settings=MODEL_SETTINGS,
     )
 
     job_text = (
@@ -146,13 +166,8 @@ async def score_job_async(job: dict) -> tuple[dict, dict | None]:
     )
 
     try:
-        # Run blocking SDK call in thread pool so we don't block the event loop
-        loop = asyncio.get_event_loop()
         response = await asyncio.wait_for(
-            loop.run_in_executor(
-                None,
-                lambda: client.run_sync(f"Analyse this job:\n\n{job_text}"),
-            ),
+            client.run(f"Analyse this job:\n\n{job_text}"),
             timeout=LLM_TIMEOUT_SECONDS,
         )
 
