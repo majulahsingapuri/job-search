@@ -250,7 +250,10 @@ def get_jobs_scraped_on(date_str: str) -> list[dict]:
             """
             SELECT *
             FROM jobs
-            WHERE date_found >= ? AND date_found <= ? AND fit_score >= 8.5
+            WHERE date_found >= ? 
+                AND date_found <= ? 
+                AND fit_score >= 9 
+                AND status = 'applied'
             ORDER BY date_found DESC
             """,
             (date_from, date_to),

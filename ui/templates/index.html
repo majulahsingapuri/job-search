@@ -164,6 +164,7 @@
           {% endif %}
         </a>
       </th>
+      <th>Resume</th>
       <th>
         <a class="sort-link" href="{{ sort_links['status'].url }}">
           Status
@@ -190,6 +191,7 @@
       <td>{{ job['location'] or '' }}</td>
       <td>{{ job['source'] or '' }}</td>
       <td class="fit">{{ '%.1f'|format(job['fit_score']) if job['fit_score'] is not none else '' }}</td>
+      <td>{{ job['resume_variant'] or '' }}</td>
       <td>
         <form method="post" action="/jobs/{{ job['id'] }}/status">
           <input type="hidden" name="next" value="{{ next_url }}" />
@@ -205,9 +207,6 @@
           <summary>Notes</summary>
           {% if job['fit_reasoning'] %}
           <p><strong>Fit reasoning:</strong> {{ job['fit_reasoning'] }}</p>
-          {% endif %}
-          {% if job['resume_variant'] %}
-          <p><strong>Resume:</strong> {{ job['resume_variant'] }}</p>
           {% endif %}
           {% if job['resume_reasoning'] %}
           <p><strong>Resume reasoning:</strong> {{ job['resume_reasoning'] }}</p>

@@ -6,6 +6,7 @@ Uses Playwright in headless mode to handle JS-rendered content.
 
 import asyncio
 import os
+import random
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from rich.console import Console
@@ -220,11 +221,18 @@ async def scrape_linkedin(
                             )
                             link_el = await card.query_selector(selectors["link"])
 
-                            title = (
-                                (await title_el.inner_text()).strip()
-                                if title_el
-                                else ""
-                            )
+                            title = ""
+                            if title_el:
+                                if selectors["label"] == "authenticated":
+                                    strong_el = await title_el.query_selector(
+                                        'span[aria-hidden="true"] strong'
+                                    )
+                                    if strong_el:
+                                        title = (await strong_el.inner_text()).strip()
+                                    else:
+                                        title = (await title_el.inner_text()).strip()
+                                else:
+                                    title = (await title_el.inner_text()).strip()
                             company = (
                                 (await company_el.inner_text()).strip()
                                 if company_el
@@ -327,6 +335,16 @@ async def enrich_job_descriptions(
     lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(concurrency)
 
+    def _get_env_int(name: str, default: int) -> int:
+        try:
+            value = int(os.getenv(name, str(default)))
+        except ValueError:
+            return default
+        return max(0, value)
+
+    base_delay_ms = _get_env_int("LINKEDIN_ENRICH_DELAY_MS", 1000)
+    jitter_delay_ms = _get_env_int("LINKEDIN_ENRICH_JITTER_MS", 500)
+
     console.log(f"  Enriching 0/{total}")
 
     async def _enrich_job(job: dict) -> dict:
@@ -343,6 +361,9 @@ async def enrich_job_descriptions(
             page = await context.new_page()
             try:
                 url = job["url"]
+                if base_delay_ms or jitter_delay_ms:
+                    delay_ms = base_delay_ms + random.randint(0, jitter_delay_ms)
+                    await asyncio.sleep(delay_ms / 1000)
                 try:
                     response = await page.goto(
                         url, timeout=20000, wait_until="domcontentloaded"

@@ -78,30 +78,73 @@ cp .env.example .env
 
 Edit `.env` (make sure to add your LLM provider API key):
 
-| Variable                      | What to set                                                                         |
-|-------------------------------|-------------------------------------------------------------------------------------|
-| `*_API_KEY`                   | your model provider api key                                                         |
-| `LLM_PROVIDER`                | your model provider (default: `anthropic`)                                          |
-| `LLM_MODEL`                   | LLM model name (default: `claude-haiku-4-5`)                                        |
-| `LLM_TIMEOUT_SECONDS`         | Per-job LLM timeout in seconds (default: `180`)                                     |
-| `AGENT_BATCH_SIZE`            | Number of concurrent requests to LLM for scoring and analysis (default: `3`)        |
-| `SMTP_HOST`                   | SMTP server host (default: `smtp.porkbun.com`)                                      |
-| `SMTP_PORT`                   | SMTP server port (default: `587`)                                                   |
-| `SMTP_USER`                   | SMTP account username/email                                                         |
-| `SMTP_PASS`                   | SMTP account password                                                               |
-| `NOTIFY_TO`                   | Where to send digests (can be same as SMTP_USER)                                    |
-| `JOB_KEYWORDS`                | Comma-separated search terms                                                        |
-| `JOB_LOCATION`                | e.g. `Boston, MA`                                                                   |
-| `MIN_FIT_SCORE`               | Minimum score to include in digest (default: 6)                                     |
-| `SCRAPE_TIME`                 | Daily run time in 24h format (default: `08:00`)                                     |
-| `PIPELINE_STAGES_NOW`         | Comma-separated stages for `--now` (default: `scrape,score,digest,outreach`)        |
-| `PIPELINE_STAGES_SCHEDULE`    | Comma-separated stages for scheduled runs (default: `scrape,score,digest,outreach`) |
-| `LINKEDIN_STORAGE_STATE`      | Path to saved LinkedIn session (default: `.auth/linkedin_state.json`)               |
-| `LINKEDIN_USERNAME`           | LinkedIn login email/username (required for headless login)                         |
-| `LINKEDIN_PASSWORD`           | LinkedIn login password (required for headless login)                               |
-| `LINKEDIN_ENRICH_CONCURRENCY` | Number of concurrent detail pages during enrichment (default: `5`)                  |
-| `LINKEDIN_MAX_PAGES`          | Max LinkedIn pages to scrape per keyword (default: all pages)                       |
-| `OUTREACH_TARGETS`            | Comma-separated list: `recruiter,hiring_manager,alumni` (default: all)              |
+#### LLM + API
+
+| Variable                        | What to set                                                 |
+|---------------------------------|-------------------------------------------------------------|
+| `*_API_KEY`                     | your model provider api key                                 |
+| `LLM_PROVIDER`                  | your model provider (default: `anthropic`)                  |
+| `LLM_MODEL`                     | LLM model name (default: `claude-haiku-4-5`)                |
+| `LLM_TIMEOUT_SECONDS`           | Per-job LLM timeout in seconds (default: `180`)             |
+| `AGENT_BATCH_SIZE`              | Concurrent LLM requests for scoring/analysis (default: `3`) |
+| `ANTHROPIC_PROMPT_CACHE_TTL`    | Anthropic prompt cache TTL (default: `5m`)                  |
+| `OPENAI_PROMPT_CACHE_RETENTION` | OpenAI prompt cache retention (default: `24h`)              |
+| `OPENAI_PROMPT_CACHE_KEY`       | OpenAI prompt cache key (optional)                          |
+
+#### Jobs + Scoring
+
+| Variable        | What to set                                     |
+|-----------------|-------------------------------------------------|
+| `JOB_KEYWORDS`  | Comma-separated search terms                    |
+| `JOB_LOCATION`  | e.g. `Boston, MA`                               |
+| `MIN_FIT_SCORE` | Minimum score to include in digest (default: 6) |
+
+#### Scheduling + Pipeline
+
+| Variable                   | What to set                                                                         |
+|----------------------------|-------------------------------------------------------------------------------------|
+| `SCRAPE_TIME`              | Daily run time in 24h format (default: `08:00`)                                     |
+| `PIPELINE_STAGES_NOW`      | Comma-separated stages for `--now` (default: `scrape,score,digest,outreach`)        |
+| `PIPELINE_STAGES_SCHEDULE` | Comma-separated stages for scheduled runs (default: `scrape,score,digest,outreach`) |
+
+#### Storage
+
+| Variable  | What to set                                     |
+|-----------|-------------------------------------------------|
+| `DB_PATH` | SQLite DB path (default: `/app/db/jobs.sqlite`) |
+
+#### Email Notifications
+
+| Variable    | What to set                                      |
+|-------------|--------------------------------------------------|
+| `SMTP_HOST` | SMTP server host (default: `smtp.porkbun.com`)   |
+| `SMTP_PORT` | SMTP server port (default: `587`)                |
+| `SMTP_USER` | SMTP account username/email                      |
+| `SMTP_PASS` | SMTP account password                            |
+| `NOTIFY_TO` | Where to send digests (can be same as SMTP_USER) |
+
+#### LinkedIn: Session + Scrape
+
+| Variable                 | What to set                                                           |
+|--------------------------|-----------------------------------------------------------------------|
+| `LINKEDIN_STORAGE_STATE` | Path to saved LinkedIn session (default: `.auth/linkedin_state.json`) |
+| `LINKEDIN_USERNAME`      | LinkedIn login email/username (required for headless login)           |
+| `LINKEDIN_PASSWORD`      | LinkedIn login password (required for headless login)                 |
+| `LINKEDIN_MAX_PAGES`     | Max LinkedIn pages to scrape per keyword (default: all pages)         |
+
+#### LinkedIn: Enrichment Throttling
+
+| Variable                      | What to set                                                      |
+|-------------------------------|------------------------------------------------------------------|
+| `LINKEDIN_ENRICH_CONCURRENCY` | Concurrent detail pages during enrichment (default: `5`)         |
+| `LINKEDIN_ENRICH_DELAY_MS`    | Base delay (ms) before each enrichment request (default: `1000`) |
+| `LINKEDIN_ENRICH_JITTER_MS`   | Extra random delay (ms) added to base delay (default: `500`)     |
+
+#### Outreach
+
+| Variable           | What to set                                                            |
+|--------------------|------------------------------------------------------------------------|
+| `OUTREACH_TARGETS` | Comma-separated list: `recruiter,hiring_manager,alumni` (default: all) |
 
 ### 2. Update your resume variants
 

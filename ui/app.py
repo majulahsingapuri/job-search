@@ -10,8 +10,8 @@ app = Flask(__name__)
 DB_PATH = os.getenv("DB_PATH", "/app/db/jobs.sqlite")
 ALLOWED_STATUSES = [
     "new",
-    "outreach",
     "applied",
+    "outreach",
     "interview",
     "offer",
     "accepted",
@@ -50,9 +50,7 @@ def _safe_next_url(next_url: str | None) -> str:
 
 
 def _parse_filters(args) -> dict:
-    statuses = [
-        s for s in args.getlist("status") if s and s in ALLOWED_STATUSES
-    ]
+    statuses = [s for s in args.getlist("status") if s and s in ALLOWED_STATUSES]
     sources = [s for s in args.getlist("source") if s]
     locations = [s for s in args.getlist("location") if s]
 
@@ -112,6 +110,7 @@ def _get_sources() -> list[str]:
         ).fetchall()
         return [r[0] for r in rows]
 
+
 def _get_locations() -> list[str]:
     now = time.time()
     if _locations_cache["expires_at"] > now:
@@ -153,9 +152,7 @@ def _query_jobs(
 
     if filters["q"]:
         q = f"%{filters['q'].lower()}%"
-        where.append(
-            "(LOWER(title) LIKE ? OR LOWER(company) LIKE ?)"
-        )
+        where.append("(LOWER(title) LIKE ? OR LOWER(company) LIKE ?)")
         params.extend([q, q])
 
     if filters["min_fit_score"] is not None:
@@ -291,6 +288,7 @@ def _query_outreach(
             return rows, total, page, total_pages, None
     except sqlite3.OperationalError as exc:
         return [], 0, 1, 0, str(exc)
+
 
 def _clean_params(args: dict) -> dict:
     cleaned: dict[str, object] = {}
