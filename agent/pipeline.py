@@ -6,18 +6,19 @@ Called by main.py after scraping completes.
 
 import asyncio
 import json
-import os
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
 from db.database import get_unscored_jobs, update_job_agent_results
 from agent.routing_agent import score_job_async
+from config.settings import get_settings
 
 console = Console()
+settings = get_settings()
 
 # Keep batches small — each call hits the Claude API
-BATCH_SIZE = int(os.getenv("AGENT_BATCH_SIZE", "3"))
+BATCH_SIZE = settings.agent_batch_size
 
 
 def _score_badge(score: float) -> str:

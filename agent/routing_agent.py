@@ -14,16 +14,17 @@ from enum import Enum
 import json
 import asyncio
 import hashlib
-import os
 from pydantic_ai import Agent
 from pydantic import BaseModel, Field
 from rich.console import Console
 from config.resumes import RESUME_VARIANTS
+from config.settings import get_settings
 
 console = Console()
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").lower()
-LLM_MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5")
-LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))
+settings = get_settings()
+LLM_PROVIDER = settings.llm_provider
+LLM_MODEL = settings.llm_model
+LLM_TIMEOUT_SECONDS = settings.llm_timeout_seconds
 
 CANDIDATE_PROFILE = """
 Name: Bhargav Singapuri
@@ -93,15 +94,10 @@ No preamble. No markdown fences. No explanation outside the JSON.
 
 def _build_model_settings() -> dict:
     if LLM_PROVIDER == "anthropic":
-        ttl = os.getenv("ANTHROPIC_PROMPT_CACHE_TTL", "5m").strip()
-        if ttl not in {"5m", "1h"}:
-            ttl = "5m"
-        return {"anthropic_cache_instructions": ttl}
+        return {"anthropic_cache_instructions": settings.anthropic_prompt_cache_ttl}
     if LLM_PROVIDER == "openai":
-        retention = os.getenv("OPENAI_PROMPT_CACHE_RETENTION", "24h").strip()
-        if retention not in {"in_memory", "24h"}:
-            retention = "24h"
-        cache_key = os.getenv("OPENAI_PROMPT_CACHE_KEY")
+        retention = settings.openai_prompt_cache_retention
+        cache_key = settings.openai_prompt_cache_key
         if not cache_key:
             digest = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:32]
             cache_key = f"routing-agent-system:{digest}"

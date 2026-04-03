@@ -3,13 +3,11 @@ scraper/linkedin_auth.py
 Handles LinkedIn authentication and session management.
 """
 
-import os
 import time
 from pathlib import Path
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from rich.console import Console
-from dotenv import load_dotenv
 
 from utils import (
     DEFAULT_LINKEDIN_STORAGE_STATE,
@@ -17,9 +15,10 @@ from utils import (
     get_linkedin_storage_state_path,
     is_linkedin_login_page,
 )
+from config.settings import get_settings
 
-load_dotenv()
 console = Console()
+settings = get_settings()
 
 LINKEDIN_LOGIN_URL = "https://www.linkedin.com/login"
 
@@ -76,37 +75,72 @@ async def _goto_with_login_fallback(
     browser,
     context,
     used_state: bool,
+    *,
+    headless: bool = True,
+    allow_public_fallback: bool = True,
+    allow_login_attempt: bool = True,
+    storage_state: Path | None = None,
 ) -> tuple:
     await page.goto(url, timeout=30000, wait_until="domcontentloaded")
     await page.wait_for_timeout(2500)  # Let JS render
 
-    if used_state and await is_linkedin_login_page(page):
+    if not await is_linkedin_login_page(page):
+        return page, context, used_state, False, False
+
+    if allow_login_attempt:
+        if used_state:
+            console.log(
+                "[yellow]LinkedIn session expired; attempting login.[/yellow]"
+            )
+        else:
+            console.log(
+                "[yellow]LinkedIn unauthenticated; attempting login.[/yellow]"
+            )
+        if storage_state is None:
+            storage_state = get_linkedin_storage_state_path(
+                default_path=DEFAULT_LINKEDIN_STORAGE_STATE
+            )
+        login_ok = await login_linkedin(headless=headless)
+        if login_ok and storage_state and storage_state.exists():
+            await context.close()
+            context, used_state = await _create_context(browser, storage_state)
+            page = await context.new_page()
+            await page.goto(url, timeout=30000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(2500)
+            if not await is_linkedin_login_page(page):
+                return page, context, used_state, False, False
+
+    if allow_public_fallback:
         console.log(
-            "[yellow]LinkedIn session expired; falling back to public listings.[/yellow]"
+            "[yellow]LinkedIn login failed; using public listings.[/yellow]"
         )
         await context.close()
         context, used_state = await _create_context(browser, None)
         page = await context.new_page()
         await page.goto(url, timeout=30000, wait_until="domcontentloaded")
         await page.wait_for_timeout(2500)
+        return page, context, used_state, False, True
 
-    return page, context, used_state
+    console.log(
+        "[red]LinkedIn login failed and public fallback is disabled.[/red]"
+    )
+    return page, context, used_state, True, False
 
 
-async def login_linkedin(headless: bool = True) -> None:
+async def login_linkedin(headless: bool = True) -> bool:
     storage_state = get_linkedin_storage_state_path(
         default_path=DEFAULT_LINKEDIN_STORAGE_STATE
     )
     storage_state.parent.mkdir(parents=True, exist_ok=True)
-    username = os.getenv("LINKEDIN_USERNAME", "").strip()
-    password = os.getenv("LINKEDIN_PASSWORD", "").strip()
+    username = settings.linkedin_username.strip()
+    password = settings.linkedin_password.strip()
 
     if headless and (not username or not password):
         console.log(
             "[red]LinkedIn login: headless mode requires LINKEDIN_USERNAME and "
             "LINKEDIN_PASSWORD. Re-run with --headful for interactive login.[/red]"
         )
-        return
+        return False
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -138,14 +172,14 @@ async def login_linkedin(headless: bool = True) -> None:
                     "Use --headful to complete the login interactively.[/red]"
                 )
                 await browser.close()
-                return
+                return False
             if await is_linkedin_login_page(page):
                 console.log(
                     "[red]LinkedIn login failed in headless mode. "
                     "If you have MFA, use --headful to login interactively.[/red]"
                 )
                 await browser.close()
-                return
+                return False
         else:
             console.log(
                 "[cyan]LinkedIn:[/cyan] Complete login in the browser, then press Enter here."
@@ -165,12 +199,13 @@ async def login_linkedin(headless: bool = True) -> None:
                         "Try again and ensure the login completes before pressing Enter.[/red]"
                     )
                     await browser.close()
-                    return
+                    return False
 
         await context.storage_state(path=str(storage_state))
         await browser.close()
 
     console.log(f"[green]LinkedIn:[/green] Session saved to {storage_state}")
+    return True
 
 
 if __name__ == "__main__":

@@ -5,16 +5,21 @@ Uses Playwright in headless mode to handle JS-rendered content.
 """
 
 import asyncio
-import os
 import random
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 from rich.console import Console
 
-from scraper.linkedin_auth import _create_context, _goto_with_login_fallback
+from scraper.linkedin_auth import (
+    _create_context,
+    _goto_with_login_fallback,
+    login_linkedin,
+)
 from utils import DEFAULT_LINKEDIN_STORAGE_STATE, get_linkedin_storage_state_path
+from config.settings import get_settings
 
 console = Console()
+settings = get_settings()
 
 LINKEDIN_BASE = "https://www.linkedin.com/jobs/search"
 
@@ -99,22 +104,8 @@ async def scrape_linkedin(
     {title, company, location, url, source, description}
     """
     jobs = []
-    try:
-        enrich_concurrency = int(os.getenv("LINKEDIN_ENRICH_CONCURRENCY", "5"))
-    except ValueError:
-        enrich_concurrency = 5
-    if enrich_concurrency < 1:
-        enrich_concurrency = 1
-
-    max_pages_raw = os.getenv("LINKEDIN_MAX_PAGES", "").strip()
-    max_pages: int | None = None
-    if max_pages_raw:
-        try:
-            max_pages = int(max_pages_raw)
-            if max_pages < 1:
-                max_pages = None
-        except ValueError:
-            max_pages = None
+    enrich_concurrency = settings.linkedin_enrich_concurrency
+    max_pages: int | None = settings.linkedin_max_pages
     seen_urls: set[str] = set()
     auth_selectors = {
         "card": "div.job-card-container.job-card-list",
@@ -144,6 +135,28 @@ async def scrape_linkedin(
             default_path=DEFAULT_LINKEDIN_STORAGE_STATE
         )
         context, used_state = await _create_context(browser, storage_state)
+        public_fallback = settings.linkedin_public_fallback
+        force_public_mode = False
+
+        if not used_state:
+            console.log(
+                "[yellow]LinkedIn session missing; attempting login.[/yellow]"
+            )
+            login_ok = await login_linkedin(headless=headless)
+            if login_ok and storage_state.exists():
+                await context.close()
+                context, used_state = await _create_context(browser, storage_state)
+            else:
+                if not public_fallback:
+                    console.log(
+                        "[yellow]LinkedIn login failed and public fallback is disabled; skipping LinkedIn.[/yellow]"
+                    )
+                    await browser.close()
+                    return []
+                console.log(
+                    "[yellow]LinkedIn login failed; using public listings.[/yellow]"
+                )
+                force_public_mode = True
         page = await context.new_page()
 
         for keyword in keywords:
@@ -155,9 +168,31 @@ async def scrape_linkedin(
                 url = build_linkedin_url(keyword, location, start=start)
 
                 try:
-                    page, context, used_state = await _goto_with_login_fallback(
-                        page, url, browser, context, used_state
+                    (
+                        page,
+                        context,
+                        used_state,
+                        auth_failed,
+                        forced_public,
+                    ) = await _goto_with_login_fallback(
+                        page,
+                        url,
+                        browser,
+                        context,
+                        used_state,
+                        headless=headless,
+                        allow_public_fallback=public_fallback,
+                        allow_login_attempt=not force_public_mode,
+                        storage_state=storage_state,
                     )
+                    if forced_public:
+                        force_public_mode = True
+                    if auth_failed:
+                        console.log(
+                            "[yellow]LinkedIn auth failed and public fallback is disabled; skipping LinkedIn.[/yellow]"
+                        )
+                        await browser.close()
+                        return []
 
                     # Scroll the results list to load all cards
                     scroll_container_selector = (
@@ -335,15 +370,8 @@ async def enrich_job_descriptions(
     lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(concurrency)
 
-    def _get_env_int(name: str, default: int) -> int:
-        try:
-            value = int(os.getenv(name, str(default)))
-        except ValueError:
-            return default
-        return max(0, value)
-
-    base_delay_ms = _get_env_int("LINKEDIN_ENRICH_DELAY_MS", 1000)
-    jitter_delay_ms = _get_env_int("LINKEDIN_ENRICH_JITTER_MS", 500)
+    base_delay_ms = settings.linkedin_enrich_delay_ms
+    jitter_delay_ms = settings.linkedin_enrich_jitter_ms
 
     console.log(f"  Enriching 0/{total}")
 

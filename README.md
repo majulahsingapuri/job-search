@@ -106,6 +106,7 @@ Edit `.env` (make sure to add your LLM provider API key):
 | `SCRAPE_TIME`              | Daily run time in 24h format (default: `08:00`)                                     |
 | `PIPELINE_STAGES_NOW`      | Comma-separated stages for `--now` (default: `scrape,score,digest,outreach`)        |
 | `PIPELINE_STAGES_SCHEDULE` | Comma-separated stages for scheduled runs (default: `scrape,score,digest,outreach`) |
+| `SCRAPE_SOURCES`           | Comma-separated scrapers to enable (default: `linkedin,hn,simplify`)                |
 
 #### Storage
 
@@ -125,12 +126,13 @@ Edit `.env` (make sure to add your LLM provider API key):
 
 #### LinkedIn: Session + Scrape
 
-| Variable                 | What to set                                                           |
-|--------------------------|-----------------------------------------------------------------------|
-| `LINKEDIN_STORAGE_STATE` | Path to saved LinkedIn session (default: `.auth/linkedin_state.json`) |
-| `LINKEDIN_USERNAME`      | LinkedIn login email/username (required for headless login)           |
-| `LINKEDIN_PASSWORD`      | LinkedIn login password (required for headless login)                 |
-| `LINKEDIN_MAX_PAGES`     | Max LinkedIn pages to scrape per keyword (default: all pages)         |
+| Variable                   | What to set                                                           |
+|----------------------------|-----------------------------------------------------------------------|
+| `LINKEDIN_STORAGE_STATE`   | Path to saved LinkedIn session (default: `.auth/linkedin_state.json`) |
+| `LINKEDIN_USERNAME`        | LinkedIn login email/username (required for headless login)           |
+| `LINKEDIN_PASSWORD`        | LinkedIn login password (required for headless login)                 |
+| `LINKEDIN_MAX_PAGES`       | Max LinkedIn pages to scrape per keyword (default: all pages)         |
+| `LINKEDIN_PUBLIC_FALLBACK` | Fall back to public listings when login fails (default: `true`)       |
 
 #### LinkedIn: Enrichment Throttling
 

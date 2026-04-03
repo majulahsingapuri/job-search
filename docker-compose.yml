@@ -3,6 +3,8 @@ services:
     build: .
     container_name: job-agent
     env_file: .env.prod
+    environment:
+      - APP_ENV=production
     volumes:
       - ./db:/app/db          # SQLite persistence
       - ./logs:/app/logs      # Log persistence

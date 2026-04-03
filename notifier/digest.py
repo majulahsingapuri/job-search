@@ -9,7 +9,6 @@ Each email contains:
   - After sending, marks all included jobs as notified in the DB
 """
 
-import os
 import json
 import smtplib
 from datetime import datetime
@@ -20,8 +19,10 @@ from rich.console import Console
 from db.database import get_unnotified_jobs, mark_notified
 from config.resumes import RESUME_VARIANTS
 from utils import LINKEDIN_PEOPLE_SEARCH_URL
+from config.settings import get_settings
 
 console = Console()
+settings = get_settings()
 
 
 def _score_colour(score: float) -> str:
@@ -212,12 +213,12 @@ def _build_plaintext(jobs: list[dict], date_str: str) -> str:
 
 def send_digest() -> dict:
     """Send digest email. Returns {sent, job_count, error}."""
-    min_score = float(os.getenv("MIN_FIT_SCORE", "6"))
-    smtp_host = os.getenv("SMTP_HOST", "smtp.porkbun.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER", "")
-    smtp_pass = os.getenv("SMTP_PASS", "")
-    notify_to = os.getenv("NOTIFY_TO", smtp_user)
+    min_score = settings.min_fit_score
+    smtp_host = settings.smtp_host
+    smtp_port = settings.smtp_port
+    smtp_user = settings.smtp_user
+    smtp_pass = settings.smtp_pass
+    notify_to = settings.notify_to or smtp_user
 
     if not smtp_user or not smtp_pass:
         console.log("[red]Notifier: SMTP_USER or SMTP_PASS not set — skipping.[/red]")

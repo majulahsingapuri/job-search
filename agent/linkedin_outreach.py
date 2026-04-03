@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 from datetime import datetime
 from urllib.parse import quote
@@ -30,8 +29,10 @@ from utils import (
     get_linkedin_storage_state_path,
     is_linkedin_login_page,
 )
+from config.settings import get_settings
 
 console = Console()
+settings = get_settings()
 
 LOCATION_FILTER = "United States"
 SCHOOLS = ["Northeastern University", "Nanyang Technological University Singapore"]
@@ -68,10 +69,7 @@ def _normalize_outreach_targets(values: list[str]) -> list[str]:
 
 def _resolve_outreach_targets(targets: list[str] | None) -> list[str]:
     if targets is None:
-        raw = os.getenv("OUTREACH_TARGETS", "")
-        if not raw.strip():
-            return DEFAULT_OUTREACH_TARGETS.copy()
-        parsed = [part.strip() for part in raw.split(",") if part.strip()]
+        parsed = settings.outreach_targets
         return _normalize_outreach_targets(parsed)
     return _normalize_outreach_targets(targets)
 

@@ -8,9 +8,10 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
-import os
+from config.settings import get_settings
 
-DB_PATH = Path(os.getenv("DB_PATH", "/app/db/jobs.sqlite"))
+settings = get_settings()
+DB_PATH = Path(settings.db_path)
 
 
 def get_connection() -> sqlite3.Connection:

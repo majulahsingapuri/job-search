@@ -4,8 +4,9 @@ Shared helpers for LinkedIn automation.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
+
+from config.settings import get_settings
 
 DEFAULT_LINKEDIN_STORAGE_STATE = ".auth/linkedin_state.json"
 LINKEDIN_USER_AGENT = (
@@ -20,7 +21,8 @@ def get_linkedin_storage_state_path(
     env_var: str = "LINKEDIN_STORAGE_STATE",
     default_path: str = DEFAULT_LINKEDIN_STORAGE_STATE,
 ) -> Path:
-    raw = os.getenv(env_var, default_path)
+    settings = get_settings()
+    raw = settings.linkedin_storage_state or default_path
     return Path(raw).expanduser()
 
 

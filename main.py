@@ -17,15 +17,13 @@ Usage:
 import asyncio
 import argparse
 import sys
-import os
 import schedule
 import time
 from datetime import datetime
-from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-load_dotenv()
+from config.settings import get_settings
 
 from db.database import (
     init_db,
@@ -44,14 +42,17 @@ from agent.linkedin_outreach import run_linkedin_outreach
 from notifier.digest import send_digest
 
 console = Console()
+settings = get_settings()
 
-KEYWORDS = [
-    k.strip() for k in os.getenv("JOB_KEYWORDS", "machine learning engineer").split(",")
-]
-LOCATION = os.getenv("JOB_LOCATION", "Boston, MA")
-SCRAPE_TIME = os.getenv("SCRAPE_TIME", "08:00")
+KEYWORDS = settings.job_keywords
+LOCATION = settings.job_location
+SCRAPE_TIME = settings.scrape_time
 
 ALLOWED_STAGES = ["scrape", "score", "digest", "outreach"]
+ALLOWED_SCRAPE_SOURCES = ["linkedin", "simplify", "hn"]
+ENV_SCRAPE_SOURCES = [
+    s for s in settings.scrape_sources if s in ALLOWED_SCRAPE_SOURCES
+] or ALLOWED_SCRAPE_SOURCES.copy()
 
 
 async def _run_scraper(source: str, coro) -> tuple[int, int]:
@@ -74,7 +75,21 @@ def _parse_selected_scrapers(args: argparse.Namespace) -> list[str]:
         selected.append("simplify")
     if args.hn:
         selected.append("hn")
-    return selected or ["linkedin", "simplify", "hn"]
+    if not selected:
+        return ENV_SCRAPE_SOURCES.copy()
+    filtered = [s for s in selected if s in ENV_SCRAPE_SOURCES]
+    if not filtered:
+        console.log(
+            "[yellow]Requested scrapers are disabled by SCRAPE_SOURCES; "
+            "falling back to allowed sources.[/yellow]"
+        )
+        return ENV_SCRAPE_SOURCES.copy()
+    if len(filtered) != len(selected):
+        console.log(
+            "[yellow]Some requested scrapers are disabled by SCRAPE_SOURCES; "
+            "running allowed sources only.[/yellow]"
+        )
+    return filtered
 
 
 def _parse_stage_list(value: str | None, label: str) -> list[str]:
@@ -260,12 +275,7 @@ async def run_enrich_missing_descriptions(
     console.log(
         f"[cyan]LinkedIn:[/cyan] Enriching descriptions for {total} jobs"
     )
-    try:
-        enrich_concurrency = int(os.getenv("LINKEDIN_ENRICH_CONCURRENCY", "5"))
-    except ValueError:
-        enrich_concurrency = 5
-    if enrich_concurrency < 1:
-        enrich_concurrency = 1
+    enrich_concurrency = settings.linkedin_enrich_concurrency
 
     enriched = await enrich_linkedin_descriptions(
         jobs, headless=not headful, concurrency=enrich_concurrency
@@ -371,10 +381,10 @@ if __name__ == "__main__":
     SELECTED_SCRAPERS = _parse_selected_scrapers(args)
     try:
         STAGES_NOW = _parse_stage_list(
-            os.getenv("PIPELINE_STAGES_NOW"), "PIPELINE_STAGES_NOW"
+            settings.pipeline_stages_now, "PIPELINE_STAGES_NOW"
         )
         STAGES_SCHEDULE = _parse_stage_list(
-            os.getenv("PIPELINE_STAGES_SCHEDULE"), "PIPELINE_STAGES_SCHEDULE"
+            settings.pipeline_stages_schedule, "PIPELINE_STAGES_SCHEDULE"
         )
     except ValueError as exc:
         console.log(f"[red]{exc}[/red]")
