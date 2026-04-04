@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     )
 
     # LLM configuration
+    anthropic_api_key: str | None = None
+    openai_api_key: str | None = None
     llm_provider: str = "anthropic"
     llm_model: str = "claude-haiku-4-5"
     llm_timeout_seconds: int = 180
@@ -50,12 +52,12 @@ class Settings(BaseSettings):
     openai_prompt_cache_key: str | None = None
 
     # Job search + scoring
-    job_keywords: list[str] = Field(
+    job_keywords: list[str] | str = Field(
         default_factory=lambda: DEFAULT_JOB_KEYWORDS.copy()
     )
     job_location: str = "Boston, MA"
     min_fit_score: float = 6.0
-    scrape_sources: list[str] = Field(
+    scrape_sources: list[str] | str = Field(
         default_factory=lambda: list(ALLOWED_SCRAPE_SOURCES)
     )
 
@@ -85,7 +87,7 @@ class Settings(BaseSettings):
     linkedin_enrich_jitter_ms: int = 500
 
     # Outreach
-    outreach_targets: list[str] = Field(
+    outreach_targets: list[str] | str = Field(
         default_factory=lambda: DEFAULT_OUTREACH_TARGETS.copy()
     )
 

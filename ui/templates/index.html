@@ -41,12 +41,77 @@
         class="filter-search"
         placeholder="Search locations"
         autocomplete="off"
+        data-filter-search="location"
       />
       <div class="checklist" id="location">
         {% for loc in locations %}
         <label>
           <input type="checkbox" name="location" value="{{ loc }}" {% if loc in filters.locations %}checked{% endif %} />
           {{ loc }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
+      <label for="mode">Work mode</label>
+      <div class="checklist" id="mode">
+        {% for m in modes %}
+        <label>
+          <input type="checkbox" name="mode" value="{{ m }}" {% if m in filters.modes %}checked{% endif %} />
+          {{ m }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
+      <label for="city_search">City</label>
+      <input
+        id="city_search"
+        type="search"
+        class="filter-search"
+        placeholder="Search cities"
+        autocomplete="off"
+        data-filter-search="city"
+      />
+      <div class="checklist" id="city">
+        {% for c in cities %}
+        <label>
+          <input type="checkbox" name="city" value="{{ c }}" {% if c in filters.cities %}checked{% endif %} />
+          {{ c }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
+      <label for="state_search">State</label>
+      <input
+        id="state_search"
+        type="search"
+        class="filter-search"
+        placeholder="Search states"
+        autocomplete="off"
+        data-filter-search="state"
+      />
+      <div class="checklist" id="state">
+        {% for s in states %}
+        <label>
+          <input type="checkbox" name="state" value="{{ s }}" {% if s in filters.states %}checked{% endif %} />
+          {{ s }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
+      <label for="country">Country</label>
+      <div class="checklist" id="country">
+        {% for c in countries %}
+        <label>
+          <input type="checkbox" name="country" value="{{ c }}" {% if c in filters.countries %}checked{% endif %} />
+          {{ c }}
         </label>
         {% endfor %}
       </div>
@@ -303,20 +368,20 @@
     });
   });
 
-  const locationSearch = document.querySelector("#location_search");
-  const locationChecklist = document.querySelector("#location");
-  if (locationSearch && locationChecklist) {
-    const locationLabels = Array.from(locationChecklist.querySelectorAll("label"));
-    const applyLocationFilter = () => {
-      const query = locationSearch.value.trim().toLowerCase();
-      locationLabels.forEach((label) => {
+  document.querySelectorAll("[data-filter-search]").forEach((input) => {
+    const targetId = input.dataset.filterSearch;
+    const checklist = document.querySelector(`#${targetId}`);
+    if (!checklist) return;
+    const labels = Array.from(checklist.querySelectorAll("label"));
+    const applyFilter = () => {
+      const query = input.value.trim().toLowerCase();
+      labels.forEach((label) => {
         const text = (label.textContent || "").toLowerCase();
         label.style.display = text.includes(query) ? "flex" : "none";
       });
     };
-
-    locationSearch.addEventListener("input", applyLocationFilter);
-    applyLocationFilter();
-  }
+    input.addEventListener("input", applyFilter);
+    applyFilter();
+  });
 </script>
 {% endblock %}

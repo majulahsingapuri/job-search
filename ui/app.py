@@ -29,6 +29,10 @@ ALLOWED_SORTS = {
 PAGE_SIZE = 50
 LOCATIONS_CACHE_TTL_SECONDS = 60
 _locations_cache: dict[str, object] = {"data": [], "expires_at": 0.0}
+_cities_cache: dict[str, object] = {"data": [], "expires_at": 0.0}
+_states_cache: dict[str, object] = {"data": [], "expires_at": 0.0}
+_countries_cache: dict[str, object] = {"data": [], "expires_at": 0.0}
+_modes_cache: dict[str, object] = {"data": [], "expires_at": 0.0}
 
 
 def get_connection() -> sqlite3.Connection:
@@ -53,6 +57,10 @@ def _parse_filters(args) -> dict:
     statuses = [s for s in args.getlist("status") if s and s in ALLOWED_STATUSES]
     sources = [s for s in args.getlist("source") if s]
     locations = [s for s in args.getlist("location") if s]
+    cities = [s for s in args.getlist("city") if s]
+    states = [s for s in args.getlist("state") if s]
+    countries = [s for s in args.getlist("country") if s]
+    modes = [s for s in args.getlist("mode") if s]
 
     q = (args.get("q") or "").strip()
 
@@ -87,6 +95,10 @@ def _parse_filters(args) -> dict:
         "statuses": statuses,
         "sources": sources,
         "locations": locations,
+        "cities": cities,
+        "states": states,
+        "countries": countries,
+        "modes": modes,
         "q": q,
         "min_fit_score": min_fit_score,
         "min_fit_score_raw": min_fit_score_raw,
@@ -132,6 +144,82 @@ def _get_locations() -> list[str]:
     return locations
 
 
+def _get_location_cities() -> list[str]:
+    now = time.time()
+    if _cities_cache["expires_at"] > now:
+        return list(_cities_cache["data"])
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT location_city
+            FROM jobs
+            WHERE location_city IS NOT NULL AND location_city <> ''
+            ORDER BY location_city
+            """
+        ).fetchall()
+        cities = [r[0] for r in rows]
+    _cities_cache["data"] = cities
+    _cities_cache["expires_at"] = now + LOCATIONS_CACHE_TTL_SECONDS
+    return cities
+
+
+def _get_location_states() -> list[str]:
+    now = time.time()
+    if _states_cache["expires_at"] > now:
+        return list(_states_cache["data"])
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT location_state
+            FROM jobs
+            WHERE location_state IS NOT NULL AND location_state <> ''
+            ORDER BY location_state
+            """
+        ).fetchall()
+        states = [r[0] for r in rows]
+    _states_cache["data"] = states
+    _states_cache["expires_at"] = now + LOCATIONS_CACHE_TTL_SECONDS
+    return states
+
+
+def _get_location_countries() -> list[str]:
+    now = time.time()
+    if _countries_cache["expires_at"] > now:
+        return list(_countries_cache["data"])
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT location_country
+            FROM jobs
+            WHERE location_country IS NOT NULL AND location_country <> ''
+            ORDER BY location_country
+            """
+        ).fetchall()
+        countries = [r[0] for r in rows]
+    _countries_cache["data"] = countries
+    _countries_cache["expires_at"] = now + LOCATIONS_CACHE_TTL_SECONDS
+    return countries
+
+
+def _get_location_modes() -> list[str]:
+    now = time.time()
+    if _modes_cache["expires_at"] > now:
+        return list(_modes_cache["data"])
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT location_mode
+            FROM jobs
+            WHERE location_mode IS NOT NULL AND location_mode <> ''
+            ORDER BY location_mode
+            """
+        ).fetchall()
+        modes = [r[0] for r in rows]
+    _modes_cache["data"] = modes
+    _modes_cache["expires_at"] = now + LOCATIONS_CACHE_TTL_SECONDS
+    return modes
+
+
 def _query_jobs(
     filters: dict,
 ) -> tuple[list[sqlite3.Row], int, int, int, str | None]:
@@ -149,6 +237,28 @@ def _query_jobs(
     if filters["locations"]:
         where.append(f"location IN ({','.join(['?'] * len(filters['locations']))})")
         params.extend(filters["locations"])
+
+    if filters["cities"]:
+        where.append(
+            f"location_city IN ({','.join(['?'] * len(filters['cities']))})"
+        )
+        params.extend(filters["cities"])
+
+    if filters["states"]:
+        where.append(
+            f"location_state IN ({','.join(['?'] * len(filters['states']))})"
+        )
+        params.extend(filters["states"])
+
+    if filters["countries"]:
+        where.append(
+            f"location_country IN ({','.join(['?'] * len(filters['countries']))})"
+        )
+        params.extend(filters["countries"])
+
+    if filters["modes"]:
+        where.append(f"location_mode IN ({','.join(['?'] * len(filters['modes']))})")
+        params.extend(filters["modes"])
 
     if filters["q"]:
         q = f"%{filters['q'].lower()}%"
@@ -394,6 +504,10 @@ def index():
     jobs, total, page, total_pages, error = _query_jobs(filters)
     sources = _get_sources() if not error else []
     locations = _get_locations() if not error else []
+    cities = _get_location_cities() if not error else []
+    states = _get_location_states() if not error else []
+    countries = _get_location_countries() if not error else []
+    modes = _get_location_modes() if not error else []
     sort_links = _build_sort_links(
         request.args.to_dict(flat=False),
         filters["sort"],
@@ -446,6 +560,10 @@ def index():
         jobs=jobs_out,
         sources=sources,
         locations=locations,
+        cities=cities,
+        states=states,
+        countries=countries,
+        modes=modes,
         filters=filters,
         statuses=ALLOWED_STATUSES,
         next_url=next_url,

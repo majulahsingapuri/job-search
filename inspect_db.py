@@ -1,15 +1,8 @@
 """
 inspect_db.py  —  Browse the jobs database from the terminal.
-
-Usage:
-    python inspect_db.py                  # New unscored jobs
-    python inspect_db.py --scored         # Scored jobs, ranked by fit
-    python inspect_db.py --job <id>       # Full detail for one job
-    python inspect_db.py --all            # Everything
-    python inspect_db.py --stats          # Scrape run history
 """
 
-import sys
+import argparse
 import json
 from db.database import get_connection, init_db
 from rich.console import Console
@@ -39,6 +32,7 @@ def show_jobs_table(rows, title="Jobs"):
     table.add_column("Title",    width=30)
     table.add_column("Company",  width=20)
     table.add_column("Location", width=16)
+    table.add_column("Mode",     width=7)
     table.add_column("Source",   width=9)
     table.add_column("Resume",   width=13)
     table.add_column("Date",     width=11)
@@ -52,6 +46,7 @@ def show_jobs_table(rows, title="Jobs"):
             row["title"][:28],
             row["company"][:18],
             (row["location"] or "")[:14],
+            (row.get("location_mode") or "—")[:7],
             row["source"] or "",
             row["resume_variant"] or "—",
             (row["date_found"] or "")[:10],
@@ -79,6 +74,17 @@ def show_job_detail(job_id: str):
     header.append(f"{row['title']}\n", style="bold white")
     header.append(f"{row['company']}  •  {row.get('location','')}\n", style="cyan")
     header.append(f"Source: {row['source']}  |  Found: {row['date_found'][:10]}\n", style="dim")
+    if any(row.get(k) for k in ("location_city", "location_state", "location_country", "location_mode")):
+        loc_bits = []
+        if row.get("location_city"):
+            loc_bits.append(row["location_city"])
+        if row.get("location_state"):
+            loc_bits.append(row["location_state"])
+        if row.get("location_country"):
+            loc_bits.append(row["location_country"])
+        if row.get("location_mode"):
+            loc_bits.append(row["location_mode"])
+        header.append(f"Parsed: {', '.join(loc_bits)}\n", style="dim")
     if row.get("url"):
         header.append(row["url"], style="link")
     console.print(Panel(header, title=f"[{style}]Fit Score: {score}[/{style}]", expand=False))
@@ -148,35 +154,82 @@ def show_stats():
         console.print(f"  {row['source']:12} {row['cnt']} jobs")
 
 
+def _add_filters(where: list[str], params: list[object], args: argparse.Namespace) -> None:
+    if args.source:
+        where.append("source = ?")
+        params.append(args.source)
+    if args.city:
+        where.append("location_city = ?")
+        params.append(args.city)
+    if args.state:
+        where.append("location_state = ?")
+        params.append(args.state)
+    if args.country:
+        where.append("location_country = ?")
+        params.append(args.country)
+    if args.mode:
+        where.append("location_mode = ?")
+        params.append(args.mode)
+
+
+def _list_jobs(args: argparse.Namespace) -> None:
+    where: list[str] = []
+    params: list[object] = []
+
+    if args.scored:
+        where.append("fit_score IS NOT NULL")
+        order_by = "fit_score DESC, date_found DESC"
+        title = "Scored Jobs (ranked by fit)"
+    elif args.all:
+        order_by = "date_found DESC"
+        title = "All Jobs"
+    else:
+        where.append("fit_score IS NULL")
+        order_by = "date_found DESC"
+        title = "Unscored Jobs"
+
+    _add_filters(where, params, args)
+
+    query = "SELECT * FROM jobs"
+    if where:
+        query += " WHERE " + " AND ".join(where)
+    query += f" ORDER BY {order_by}"
+    if args.limit:
+        query += " LIMIT ?"
+        params.append(args.limit)
+
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+    show_jobs_table([dict(r) for r in rows], title=title)
+
+
 if __name__ == "__main__":
     init_db()
-    args = sys.argv[1:]
+    parser = argparse.ArgumentParser(
+        description="Browse the jobs database from the terminal."
+    )
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--stats", action="store_true", help="Scrape run history")
+    mode_group.add_argument("--job", metavar="ID", help="Full detail for one job")
+    mode_group.add_argument(
+        "--scored", action="store_true", help="Scored jobs, ranked by fit"
+    )
+    mode_group.add_argument("--all", action="store_true", help="Everything")
 
-    if "--stats" in args:
+    parser.add_argument("--source", help="Filter by source (linkedin/simplify/hn)")
+    parser.add_argument("--city", help="Filter by parsed city")
+    parser.add_argument("--state", help="Filter by parsed state")
+    parser.add_argument("--country", help="Filter by parsed country")
+    parser.add_argument(
+        "--mode", choices=["remote", "hybrid", "onsite"], help="Filter by work mode"
+    )
+    parser.add_argument("--limit", type=int, help="Limit number of rows")
+
+    args = parser.parse_args()
+
+    if args.stats:
         show_stats()
-
-    elif "--job" in args:
-        idx = args.index("--job")
-        if idx + 1 >= len(args):
-            console.print("[red]Usage: python inspect_db.py --job <id>[/red]")
-        else:
-            show_job_detail(args[idx + 1])
-
-    elif "--scored" in args:
-        with get_connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM jobs WHERE fit_score IS NOT NULL ORDER BY fit_score DESC"
-            ).fetchall()
-        show_jobs_table([dict(r) for r in rows], title="Scored Jobs (ranked by fit)")
-
-    elif "--all" in args:
-        with get_connection() as conn:
-            rows = conn.execute("SELECT * FROM jobs ORDER BY date_found DESC").fetchall()
-        show_jobs_table([dict(r) for r in rows], title="All Jobs")
-
+    elif args.job:
+        show_job_detail(args.job)
     else:
-        with get_connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM jobs WHERE fit_score IS NULL ORDER BY date_found DESC"
-            ).fetchall()
-        show_jobs_table([dict(r) for r in rows], title="Unscored Jobs")
+        _list_jobs(args)
