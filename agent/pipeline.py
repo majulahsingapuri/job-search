@@ -32,10 +32,25 @@ def _score_badge(score: float) -> str:
 
 
 async def run_routing_pipeline() -> dict:
-    jobs = get_unscored_jobs()
-    if not jobs:
+    jobs_all = get_unscored_jobs()
+    if not jobs_all:
         console.log("[dim]Routing agent: no unscored jobs.[/dim]")
         return {"processed": 0, "scored": 0, "errors": 0}
+
+    jobs = [j for j in jobs_all if (j.get("description") or "").strip()]
+    skipped_missing_desc = len(jobs_all) - len(jobs)
+    if not jobs:
+        if skipped_missing_desc:
+            console.log(
+                f"[yellow]Routing agent: skipped {skipped_missing_desc} unscored jobs with missing descriptions.[/yellow]"
+            )
+        else:
+            console.log("[dim]Routing agent: no unscored jobs.[/dim]")
+        return {"processed": 0, "scored": 0, "errors": 0}
+    if skipped_missing_desc:
+        console.log(
+            f"[yellow]Skipping {skipped_missing_desc} unscored jobs with empty descriptions.[/yellow]"
+        )
 
     console.rule(f"[bold blue]Routing Agent — scoring {len(jobs)} jobs")
 
