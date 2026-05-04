@@ -1,6 +1,7 @@
 services:
   job-agent:
     build: .
+    image: "job-agent:${TAG:-latest}"
     container_name: job-agent
     env_file: .env.prod
     environment:
@@ -15,6 +16,7 @@ services:
 
   job-ui:
     build: ./ui
+    image: "job-ui:${TAG:-latest}"
     container_name: job-ui
     environment:
       - DB_PATH=/app/db/jobs.sqlite

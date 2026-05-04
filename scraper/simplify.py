@@ -44,10 +44,6 @@ def _build_search_payload(keyword: str, page: int) -> dict[str, Any]:
                 "highlight_full_fields": "title,company_name,functions,locations",
                 "collection": "jobs",
                 "q": keyword,
-                "facet_by": (
-                    "countries,degrees,experience_level,functions,locations,seasons,"
-                    "security_clearance,sponsors_h1b,travel_requirements,type"
-                ),
                 "filter_by": SIMPLIFY_FILTER_BY,
                 "max_facet_values": 50,
                 "page": page,
