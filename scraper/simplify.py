@@ -21,11 +21,7 @@ SIMPLIFY_TYPESENSE_API_KEY = (
     "luZHVzdHJpZXMsaXNfc2ltcGxlX2FwcGxpY2F0aW9uLGpvYl9saXN0cyxsZWFkZX"
     "JzaGlwX3R5cGUsc2VjdXJpdHlfY2xlYXJhbmNlLHNraWxscyx1cmwifQ=="
 )
-SIMPLIFY_FILTER_BY = (
-    "countries:=[`United States`] && experience_level:[`Entry Level/New Grad`] && "
-    # "security_clearance:[false] && sponsors_h1b:[true] && "
-    "type:[`Full-Time`,`Internship`]"
-)
+SIMPLIFY_FILTER_BY = "countries:=[`United States`]"
 SIMPLIFY_PER_PAGE = 50
 SIMPLIFY_MAX_PAGES = 3
 
