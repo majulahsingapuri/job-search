@@ -11,6 +11,7 @@ Usage:
     python main.py --outreach-only --outreach-date 2026-03-25
     python main.py --linkedin                         # Run only LinkedIn scraper
     python main.py --simplify                         # Run only Simplify scraper
+    python main.py --greenhouse                       # Run only Greenhouse scraper
     python main.py --hn                               # Run only HN Hiring scraper
 """
 
@@ -36,6 +37,8 @@ from db.database import (
 from scraper.linkedin import scrape_linkedin
 from scraper.linkedin import enrich_linkedin_descriptions
 from scraper.simplify import scrape_simplify
+from scraper.greenhouse import scrape_greenhouse
+from scraper.greenhouse import enrich_greenhouse_jobs
 from scraper.hn import scrape_hn
 from agent.pipeline import run_routing_pipeline
 from agent.linkedin_outreach import run_linkedin_outreach
@@ -49,7 +52,7 @@ LOCATION = settings.job_location
 SCRAPE_TIME = settings.scrape_time
 
 ALLOWED_STAGES = ["scrape", "score", "digest", "outreach"]
-ALLOWED_SCRAPE_SOURCES = ["linkedin", "simplify", "hn"]
+ALLOWED_SCRAPE_SOURCES = ["linkedin", "simplify", "greenhouse", "hn"]
 ENV_SCRAPE_SOURCES = [
     s for s in settings.scrape_sources if s in ALLOWED_SCRAPE_SOURCES
 ] or ALLOWED_SCRAPE_SOURCES.copy()
@@ -73,6 +76,8 @@ def _parse_selected_scrapers(args: argparse.Namespace) -> list[str]:
         selected.append("linkedin")
     if args.simplify:
         selected.append("simplify")
+    if args.greenhouse:
+        selected.append("greenhouse")
     if args.hn:
         selected.append("hn")
     if not selected:
@@ -135,6 +140,11 @@ async def _scrape_stage(selected: list[str], headful: bool = False) -> int:
     if "simplify" in selected:
         ordered.append("simplify")
         tasks.append(_run_scraper("simplify", scrape_simplify(KEYWORDS)))
+    if "greenhouse" in selected:
+        ordered.append("greenhouse")
+        tasks.append(
+            _run_scraper("greenhouse", scrape_greenhouse(KEYWORDS, LOCATION))
+        )
     if "hn" in selected:
         ordered.append("hn")
         tasks.append(_run_scraper("hn", scrape_hn(KEYWORDS)))
@@ -158,6 +168,11 @@ async def _scrape_stage(selected: list[str], headful: bool = False) -> int:
         t.add_row("Simplify", str(sf), str(sn))
         total_found += sf
         total_new += sn
+    if "greenhouse" in selected:
+        gf, gn = by_source.get("greenhouse", (0, 0))
+        t.add_row("Greenhouse", str(gf), str(gn))
+        total_found += gf
+        total_new += gn
     if "hn" in selected:
         hf, hn = by_source.get("hn", (0, 0))
         t.add_row("HN Hiring", str(hf), str(hn))
@@ -188,7 +203,8 @@ async def run_pipeline(
     # ── Stage 1: Scrape ───────────────────────────────────────────────────────
     if do_scrape:
         total_new = await _scrape_stage(
-            selected or ["linkedin", "simplify", "hn"], headful=headful
+            selected or ["linkedin", "simplify", "greenhouse", "hn"],
+            headful=headful,
         )
         if total_new == 0 and do_score:
             console.log("[yellow]No new jobs scraped.[/yellow]")
@@ -266,20 +282,26 @@ async def run_enrich_missing_descriptions(
         console.log("[green]No jobs with missing descriptions found.[/green]")
         return
 
-    if source != "linkedin":
+    if source not in {"linkedin", "greenhouse"}:
         console.log(
             f"[red]Enrichment for source '{source}' is not supported yet.[/red]"
         )
         return
 
-    console.log(
-        f"[cyan]LinkedIn:[/cyan] Enriching descriptions for {total} jobs"
-    )
-    enrich_concurrency = settings.linkedin_enrich_concurrency
-
-    enriched = await enrich_linkedin_descriptions(
-        jobs, headless=not headful, concurrency=enrich_concurrency
-    )
+    if source == "linkedin":
+        console.log(
+            f"[cyan]LinkedIn:[/cyan] Enriching descriptions for {total} jobs"
+        )
+        enriched = await enrich_linkedin_descriptions(
+            jobs,
+            headless=not headful,
+            concurrency=settings.linkedin_enrich_concurrency,
+        )
+    else:
+        console.log(
+            f"[cyan]Greenhouse:[/cyan] Enriching descriptions for {total} jobs"
+        )
+        enriched = await enrich_greenhouse_jobs(jobs)
 
     updated = 0
     skipped = 0
@@ -328,11 +350,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--enrich-missing",
         action="store_true",
-        help="Enrich missing job descriptions from their source (LinkedIn only).",
+        help="Enrich missing job descriptions from their source.",
     )
     parser.add_argument(
         "--enrich-source",
-        choices=["linkedin"],
+        choices=["linkedin", "greenhouse"],
         default="linkedin",
         help="Source to enrich descriptions for (default: linkedin).",
     )
@@ -355,6 +377,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--simplify",
         action="store_true",
         help="Run Simplify scraper only (can be combined with other scrapers).",
+    )
+    parser.add_argument(
+        "--greenhouse",
+        action="store_true",
+        help="Run Greenhouse scraper only (can be combined with other scrapers).",
     )
     parser.add_argument(
         "--hn",

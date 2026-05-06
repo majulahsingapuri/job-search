@@ -1,8 +1,9 @@
 # Job Agent — Automated ML/AI Job Pipeline
 
-Scrapes job boards daily, scores each role against your profile using Claude,
-picks the right resume variant, drafts a LinkedIn outreach note, and delivers
-everything to your inbox as a ranked digest, then runs LinkedIn outreach.
+Scrapes job boards daily, scores each role against your profile using the
+configured LLM provider, picks the right resume variant, drafts a LinkedIn
+outreach note, and delivers everything to your inbox as a ranked digest, then
+runs LinkedIn outreach.
 
 ---
 
@@ -13,13 +14,13 @@ CRON (daily @ SCRAPE_TIME)
          │
          ▼
 ┌─────────────────────┐
-│  Stage 1: Scrape    │  LinkedIn · Simplify.jobs · HN Who's Hiring
-│                     │  Playwright (headless) + HN Algolia API
+│  Stage 1: Scrape    │  LinkedIn · Simplify.jobs · Greenhouse · HN Who's Hiring
+│                     │  Playwright + source APIs + saved auth state
 └────────┬────────────┘
          │ new jobs → SQLite (deduplicated by SHA-256 ID)
          ▼
 ┌─────────────────────┐
-│  Stage 2: Score     │  Claude (claude-sonnet-4-20250514)
+│  Stage 2: Score     │  Configured LLM provider + model
 │  (Routing Agent)    │  Fit score · Resume picker · Outreach draft
 │                     │  LinkedIn search queries · Red flags
 └────────┬────────────┘
@@ -52,15 +53,18 @@ job-search/
 ├── scraper/
 │   ├── linkedin.py          # Playwright scraper
 │   ├── linkedin_auth.py     # LinkedIn login + session management
-│   ├── simplify.py          # Playwright scraper
-│   └── hn.py                # HN Algolia API (no browser)
+│   ├── simplify.py          # Simplify API scraper
+│   ├── greenhouse.py        # Greenhouse API + job description enrichment
+│   ├── greenhouse_auth.py   # MyGreenhouse security-code login
+│   └── hn.py                # HN Algolia + Firebase item APIs
 ├── agent/
-│   ├── routing_agent.py     # Claude scoring + outreach drafting
-│   └── pipeline.py          # Batch runner for routing agent
+│   ├── routing_agent.py     # LLM scoring + outreach drafting
+│   ├── pipeline.py          # Batch runner for routing agent
 │   └── linkedin_outreach.py # LinkedIn People outreach automation
 ├── notifier/
 │   └── digest.py            # HTML email builder + SMTP sender
 ├── config/
+│   ├── settings.py          # Environment-driven runtime settings
 │   └── resumes.py           # Your 3 resume variants (edit this)
 └── db/
     └── database.py          # SQLite layer + deduplication
@@ -106,7 +110,7 @@ Edit `.env` (make sure to add your LLM provider API key):
 | `SCRAPE_TIME`              | Daily run time in 24h format (default: `08:00`)                                     |
 | `PIPELINE_STAGES_NOW`      | Comma-separated stages for `--now` (default: `scrape,score,digest,outreach`)        |
 | `PIPELINE_STAGES_SCHEDULE` | Comma-separated stages for scheduled runs (default: `scrape,score,digest,outreach`) |
-| `SCRAPE_SOURCES`           | Comma-separated scrapers to enable (default: `linkedin,hn,simplify`)                |
+| `SCRAPE_SOURCES`           | Comma-separated scrapers to enable (default: `linkedin,hn,simplify,greenhouse`)     |
 
 #### Storage
 
@@ -141,6 +145,15 @@ Edit `.env` (make sure to add your LLM provider API key):
 | `LINKEDIN_ENRICH_CONCURRENCY` | Concurrent detail pages during enrichment (default: `5`)         |
 | `LINKEDIN_ENRICH_DELAY_MS`    | Base delay (ms) before each enrichment request (default: `1000`) |
 | `LINKEDIN_ENRICH_JITTER_MS`   | Extra random delay (ms) added to base delay (default: `500`)     |
+
+#### Greenhouse: Session + Scrape
+
+| Variable                     | What to set                                                                 |
+|------------------------------|-----------------------------------------------------------------------------|
+| `GREENHOUSE_STORAGE_STATE`   | Path to saved MyGreenhouse session (default: `.auth/greenhouse_state.json`) |
+| `GREENHOUSE_EMAIL`           | Email address that receives the MyGreenhouse security code                  |
+| `GREENHOUSE_MAX_PAGES`       | Max Greenhouse pages to scrape per keyword (default: `3`)                   |
+| `GREENHOUSE_INERTIA_VERSION` | Optional Greenhouse Inertia version header override                         |
 
 #### Outreach
 
@@ -205,6 +218,48 @@ container, you can use:
 docker cp ./.auth/linkedin_state.json job-agent:/app/.auth/linkedin_state.json
 ```
 
+## Greenhouse login
+
+MyGreenhouse search requires a session for the Inertia JSON API. Save a session
+with the email security-code flow:
+
+```bash
+python -m scraper.greenhouse_auth --email jobs@bhargav.io
+```
+
+Enter the code from your inbox when prompted. The session is saved to
+`.auth/greenhouse_state.json` by default and used automatically by the
+Greenhouse scraper. If the session expires, rerun the same command and enter the
+new code.
+
+For Docker, run the login command with an interactive terminal and bind-mount
+`.auth` so the saved session persists locally:
+
+```bash
+docker-compose run --rm -it -v "$PWD/.auth:/app/.auth" job-agent python -m scraper.greenhouse_auth --email jobs@bhargav.io
+```
+
+If the scheduler container is already running, copy the auth state into it:
+
+```bash
+docker cp ./.auth/greenhouse_state.json job-agent:/app/.auth/greenhouse_state.json
+```
+
+The Greenhouse scraper uses two data paths:
+
+- Search results come from `my.greenhouse.io/jobs`, which requires the saved
+  MyGreenhouse session.
+- Full descriptions come from Greenhouse-rendered job pages. Direct
+  `job-boards.greenhouse.io/.../jobs/<id>` URLs are fetched directly. External
+  company career URLs with `gh_jid` are enriched through Greenhouse's embedded
+  iframe endpoint:
+  `job-boards.greenhouse.io/embed/job_app?for=<board_token>&token=<job_id>`.
+
+The iframe URL does not require scraping the external company site, which avoids
+company-specific Cloudflare/VPN blocks. If the inferred `for=<board_token>` is
+wrong and the iframe returns `404`, the scraper keeps the search API metadata
+and continues.
+
 ---
 
 ## Commands (by phase)
@@ -213,26 +268,33 @@ docker cp ./.auth/linkedin_state.json job-agent:/app/.auth/linkedin_state.json
 
 ```bash
 # Run full pipeline right now (scrape + score + email)
-docker-compose run --rm job-search python main.py --now
+docker-compose run --rm job-agent python main.py --now
+
+# Run the configured stages using only one scraper source
+docker-compose run --rm job-agent python main.py --now --greenhouse
+docker-compose run --rm job-agent python main.py --now --simplify
+
+# Scraper source flags can be combined
+docker-compose run --rm job-agent python main.py --now --linkedin --greenhouse
 
 # Score unscored jobs only, then send digest (useful after first run)
-docker-compose run --rm job-search python main.py --score-only
+docker-compose run --rm job-agent python main.py --score-only
 
 # Just send the digest (jobs already scored)
-docker-compose run --rm job-search python main.py --digest-only
+docker-compose run --rm job-agent python main.py --digest-only
 ```
 
 ### Phase 2: Outreach
 
 ```bash
 # Run outreach only for today's scraped jobs
-docker-compose run --rm job-search python main.py --outreach-only
+docker-compose run --rm job-agent python main.py --outreach-only
 
 # Run outreach for a specific date (YYYY-MM-DD)
-docker-compose run --rm job-search python main.py --outreach-only --outreach-date 2026-03-25
+docker-compose run --rm job-agent python main.py --outreach-only --outreach-date 2026-03-25
 
 # Show the browser for any stage that uses Playwright
-docker-compose run --rm job-search python main.py --now --headful
+docker-compose run --rm job-agent python main.py --now --headful
 ```
 
 ### Pipeline stage selection (optional)
@@ -258,29 +320,32 @@ Flags never enable stages that are disabled in `PIPELINE_STAGES_NOW`. For exampl
 
 ```bash
 # Browse unscored jobs
-docker-compose run --rm job-search python inspect_db.py
+docker-compose run --rm job-agent python inspect_db.py
 
 # Browse all scored jobs ranked by fit
-docker-compose run --rm job-search python inspect_db.py --scored
+docker-compose run --rm job-agent python inspect_db.py --scored
 
 # Full detail for one job (outreach draft, search queries, red flags)
-docker-compose run --rm job-search python inspect_db.py --job <id>
+docker-compose run --rm job-agent python inspect_db.py --job <id>
 
 # View scrape run history + DB stats
-docker-compose run --rm job-search python inspect_db.py --stats
+docker-compose run --rm job-agent python inspect_db.py --stats
 
 # Tail live logs
-docker-compose logs -f job-search
+docker-compose logs -f job-agent
 ```
 
 ### Phase 4: Enrich missing descriptions
 
 ```bash
 # Fill missing LinkedIn descriptions in the DB
-docker-compose run --rm job-search python main.py --enrich-missing
+docker-compose run --rm job-agent python main.py --enrich-missing
+
+# Fill missing Greenhouse descriptions in the DB
+docker-compose run --rm job-agent python main.py --enrich-missing --enrich-source greenhouse
 
 # Limit to 50 jobs
-docker-compose run --rm job-search python main.py --enrich-missing --enrich-limit 50
+docker-compose run --rm job-agent python main.py --enrich-missing --enrich-source greenhouse --enrich-limit 50
 ```
 
 ---
@@ -289,7 +354,7 @@ docker-compose run --rm job-search python main.py --enrich-missing --enrich-limi
 
 For each role above your `MIN_FIT_SCORE`:
 
-- **Fit score** (0-10) with Claude's reasoning
+- **Fit score** (0-10) with LLM reasoning
 - **Which resume to attach** — ML Engineer / Data Scientist / AI Researcher
 - **LinkedIn outreach note** — personalised, ≤300 chars, ready to copy-paste
 - **3 clickable LinkedIn search queries** to find a recruiter, team lead, or alum
@@ -329,6 +394,10 @@ email dashboard and use that as `SMTP_PASS`.
   updates their markup, update CSS selectors in `scraper/linkedin.py`.
 - LinkedIn outreach uses People search filters and requires a logged-in session.
 - Simplify.jobs scraping uses the Typesense API (no browser/DOM selectors).
-- HN scraping uses the official Algolia API — very stable, no browser needed.
-- Claude API calls are batched (default 3 concurrent) to stay within rate limits.
+- Greenhouse scraping uses the my.greenhouse.io Inertia JSON endpoint with a
+  saved MyGreenhouse session. Full descriptions are extracted from direct
+  Greenhouse job pages or Greenhouse embed iframes for external career pages.
+- HN scraping uses the Algolia search API and Hacker News Firebase item API,
+  no browser needed.
+- LLM API calls are batched (default 3 concurrent) to stay within rate limits.
   Increase `AGENT_BATCH_SIZE` in `.env` if you have a higher-tier API plan.

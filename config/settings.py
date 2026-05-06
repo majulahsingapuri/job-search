@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEFAULT_JOB_KEYWORDS = ["machine learning engineer"]
 DEFAULT_PIPELINE_STAGES = "scrape,score,digest,outreach"
 DEFAULT_OUTREACH_TARGETS = ["recruiter", "hiring_manager", "alumni"]
-ALLOWED_SCRAPE_SOURCES = ("linkedin", "hn", "simplify")
+ALLOWED_SCRAPE_SOURCES = ("linkedin", "hn", "simplify", "greenhouse")
 DEFAULT_STRING_FIELDS = {
     "job_location": "Boston, MA",
     "scrape_time": "08:00",
@@ -23,6 +23,7 @@ DEFAULT_STRING_FIELDS = {
     "db_path": "/app/db/jobs.sqlite",
     "smtp_host": "smtp.porkbun.com",
     "linkedin_storage_state": ".auth/linkedin_state.json",
+    "greenhouse_storage_state": ".auth/greenhouse_state.json",
 }
 
 
@@ -86,6 +87,12 @@ class Settings(BaseSettings):
     linkedin_enrich_delay_ms: int = 1000
     linkedin_enrich_jitter_ms: int = 500
 
+    # Greenhouse
+    greenhouse_max_pages: int = 3
+    greenhouse_inertia_version: str = "debac7412270deb73a5f29804de3015747c87c56"
+    greenhouse_storage_state: str = ".auth/greenhouse_state.json"
+    greenhouse_email: str = ""
+
     # Outreach
     outreach_targets: list[str] | str = Field(
         default_factory=lambda: DEFAULT_OUTREACH_TARGETS.copy()
@@ -138,6 +145,7 @@ class Settings(BaseSettings):
         "db_path",
         "smtp_host",
         "linkedin_storage_state",
+        "greenhouse_storage_state",
         mode="before",
     )
     def _default_if_blank(cls, value: Any, info):
@@ -162,6 +170,7 @@ class Settings(BaseSettings):
         "llm_timeout_seconds",
         "smtp_port",
         "linkedin_enrich_concurrency",
+        "greenhouse_max_pages",
         mode="after",
     )
     def _ensure_positive(cls, value: int) -> int:

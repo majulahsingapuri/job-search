@@ -9,6 +9,7 @@ from pathlib import Path
 from config.settings import get_settings
 
 DEFAULT_LINKEDIN_STORAGE_STATE = ".auth/linkedin_state.json"
+DEFAULT_GREENHOUSE_STORAGE_STATE = ".auth/greenhouse_state.json"
 LINKEDIN_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -23,6 +24,14 @@ def get_linkedin_storage_state_path(
 ) -> Path:
     settings = get_settings()
     raw = settings.linkedin_storage_state or default_path
+    return Path(raw).expanduser()
+
+
+def get_greenhouse_storage_state_path(
+    default_path: str = DEFAULT_GREENHOUSE_STORAGE_STATE,
+) -> Path:
+    settings = get_settings()
+    raw = settings.greenhouse_storage_state or default_path
     return Path(raw).expanduser()
 
 
