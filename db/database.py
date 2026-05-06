@@ -175,17 +175,22 @@ US_STATE_NAMES = {
 }
 US_STATE_NAMES_LOWER = {name.lower(): name for name in US_STATE_NAMES}
 COUNTRY_ALIASES = {
+    "canada": "Canada",
     "united states": "United States",
     "united states of america": "United States",
     "usa": "United States",
     "us": "United States",
     "u.s.": "United States",
     "u.s.a.": "United States",
+    "uk": "United Kingdom",
+    "u.k.": "United Kingdom",
 }
 KNOWN_COUNTRIES = {
+    "Canada",
     "United States",
     "India",
     "Singapore",
+    "United Kingdom",
 }
 
 
@@ -244,12 +249,313 @@ def _extract_work_mode(text: str | None) -> str | None:
         return "remote"
     if "hybrid" in lowered:
         return "hybrid"
-    if "on-site" in lowered or "onsite" in lowered or "on site" in lowered:
+    if (
+        "on-site" in lowered
+        or "onsite" in lowered
+        or "on site" in lowered
+        or "in person" in lowered
+    ):
         return "onsite"
     return None
 
 
+def _clean_location_token(value: str | None) -> str:
+    if not value:
+        return ""
+    cleaned = re.sub(r"\b\d{5}(?:-\d{4})?\b", "", value)
+    cleaned = re.sub(r"(?i)\bpreferred\b", "", cleaned)
+    cleaned = re.sub(r"(?i)\s+-\s+nyc$", "", cleaned)
+    cleaned = re.sub(r"(?i)\bin\s+person\b", "", cleaned)
+    cleaned = re.sub(r"(?i)\bremote[- ]first\b", "remote", cleaned)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip(" ,-/")
+
+
+def _normalize_location_alias(raw: str) -> str:
+    value = raw.strip()
+    lowered = value.lower()
+    if lowered == "nyc global hq":
+        return "New York City, NY"
+    if lowered.startswith("bellevue office"):
+        return "Bellevue, WA"
+    sandstone_match = re.search(
+        r"(?i)sandstone care\s*-\s*([^()]+colorado)\b",
+        value,
+    )
+    if sandstone_match:
+        return sandstone_match.group(1).strip(" -")
+    return value
+
+
+def _looks_like_location_list(value: str) -> bool:
+    if not value:
+        return False
+    if re.search(r"\b[A-Z]{2}\b", value):
+        return True
+    if any(state in value.lower() for state in US_STATE_NAMES_LOWER):
+        return True
+    if _normalize_country(value):
+        return True
+    return "," in value
+
+
+def _strip_mode_parenthetical(raw: str) -> tuple[str, str | None]:
+    work_mode = _extract_work_mode(raw)
+    base = raw
+    match = re.search(r"\(([^)]*)\)\s*$", raw)
+    if match:
+        inside = match.group(1).strip()
+        inside_mode = _extract_work_mode(inside)
+        if inside_mode and not _looks_like_location_list(inside):
+            work_mode = work_mode or inside_mode
+            base = raw[: match.start()].strip()
+        elif raw.lower().startswith("remote") and _looks_like_location_list(inside):
+            work_mode = work_mode or "remote"
+            base = inside
+    return base, work_mode
+
+
+def _location_text_candidates(raw_location: str | None) -> tuple[list[str], str | None]:
+    if not raw_location:
+        return [], None
+    raw = raw_location.strip()
+    if not raw:
+        return [], None
+
+    raw = _normalize_location_alias(raw)
+    base, work_mode = _strip_mode_parenthetical(raw)
+
+    parenthetical_locations = [
+        m.group(1).strip()
+        for m in re.finditer(r"\(([^)]*)\)", raw)
+        if _looks_like_location_list(m.group(1))
+        and not _extract_work_mode(m.group(1))
+        and not raw.lower().startswith("remote")
+    ]
+    if parenthetical_locations:
+        base = "; ".join(parenthetical_locations)
+
+    if base.lower().startswith("remote"):
+        work_mode = work_mode or "remote"
+        base = re.sub(r"(?i)^remote\b", "", base).strip(" -/,")
+        base = re.sub(r"(?i)^(in|within)\s+", "", base).strip(" -/,")
+
+    base = re.sub(r"(?i)\bhybrid\s+if\s+local\s+to\b", "", base)
+    base = re.sub(r"(?i)\bany\s+office\b", "", base)
+    base = re.sub(r"(?i)^onsite\b", "", base).strip(" -/,")
+    base = re.sub(r"(?i)\bon[- ]site\b", "", base).strip(" -/,")
+    base = re.sub(r"(?i)\bhybrid\b.*$", "", base).strip(" -/,")
+
+    if base.lower() in {"various", "multiple", "anywhere"}:
+        base = ""
+
+    if not base:
+        return [], work_mode
+
+    candidates: list[str] = []
+    for semi_part in re.split(r"\s*;\s*", base):
+        part = _clean_location_token(semi_part)
+        if not part:
+            continue
+        part = re.sub(r"(?i)\s+or\s+", ";", part)
+        subparts = [_clean_location_token(p) for p in part.split(";") if p.strip()]
+        for subpart in subparts:
+            if subpart.lower() in {"remote", "hybrid", "onsite", "on-site"}:
+                continue
+            comma_parts = [p.strip() for p in subpart.split(",") if p.strip()]
+            comma_parts = [
+                p
+                for p in comma_parts
+                if p.lower() not in {"remote", "hybrid", "onsite", "on-site"}
+            ]
+            if len(comma_parts) >= 4:
+                for idx in range(0, len(comma_parts) - 1, 2):
+                    city = comma_parts[idx]
+                    state = comma_parts[idx + 1]
+                    if _is_us_state(state):
+                        candidates.append(f"{city}, {state}")
+                continue
+            if len(comma_parts) == 3 and _is_us_state(comma_parts[1]):
+                candidates.append(", ".join(comma_parts))
+                continue
+            candidates.append(subpart)
+
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        candidate = _clean_location_token(candidate)
+        if candidate and candidate.lower() not in seen:
+            seen.add(candidate.lower())
+            cleaned.append(candidate)
+    return cleaned, work_mode
+
+
+def _parse_single_location(raw_location: str, work_mode: str | None = None) -> dict[str, str | None]:
+    token = _clean_location_token(_normalize_location_alias(raw_location))
+    token = re.sub(
+        r"\b([A-Z]{2})\s+(United States|USA|US|Canada|United Kingdom|UK)\b",
+        r"\1, \2",
+        token,
+    )
+    address_match = re.search(
+        r"([A-Z][A-Za-z.]+(?:\s+[A-Z][A-Za-z.]+){0,3}),?\s+([A-Z]{2})$",
+        token,
+    )
+    if address_match and not token.split(",", 1)[0].strip().istitle():
+        token = f"{address_match.group(1)}, {address_match.group(2)}"
+
+    compact_city_state = re.fullmatch(
+        r"([A-Z][A-Za-z.]+(?:\s+[A-Z][A-Za-z.]+){0,3})\s+([A-Z]{2})",
+        token,
+    )
+    if compact_city_state:
+        token = f"{compact_city_state.group(1)}, {compact_city_state.group(2)}"
+
+    parts = [p.strip() for p in token.split(",") if p.strip()]
+    parts = [
+        p
+        for p in parts
+        if p.lower() not in {"remote", "hybrid", "onsite", "on-site"}
+    ]
+
+    city = None
+    state = None
+    country = None
+
+    if len(parts) >= 3:
+        if _is_us_state(parts[-1]):
+            city = parts[-2]
+            state = _normalize_state(parts[-1])
+            country = "United States"
+        else:
+            city = parts[-3] if re.search(r"\d", parts[0]) else parts[0]
+            country = _normalize_country(", ".join(parts[-1:])) or ", ".join(parts[-1:])
+            state = _normalize_state_for_country(parts[-2], country)
+            if _is_us_state(state) and _normalize_country(country) is None:
+                country = "United States"
+    elif len(parts) == 2:
+        first, second = parts
+        country = _normalize_country(second)
+        if country:
+            if _is_us_state(first) and country == "United States":
+                state = _normalize_state(first)
+            else:
+                city = first
+        else:
+            normalized_state = _normalize_state(second)
+            if _is_us_state(normalized_state):
+                city = first
+                state = normalized_state
+                country = "United States"
+            else:
+                city = first
+                country = _normalize_country(second) or second
+    elif parts:
+        token = parts[0]
+        normalized_country = _normalize_country(token)
+        if normalized_country:
+            country = normalized_country
+        else:
+            normalized_state = _normalize_state(token)
+            if _is_us_state(normalized_state):
+                state = normalized_state
+                country = "United States"
+            else:
+                city = token
+
+    if city and re.search(r"\d", city):
+        words = city.split()
+        for idx in range(len(words) - 1, -1, -1):
+            suffix = " ".join(words[idx:])
+            if suffix and suffix[0].isupper():
+                city = suffix
+                break
+
+    return {
+        "raw_location": raw_location,
+        "city": city,
+        "state": state,
+        "country": country,
+        "work_mode": work_mode,
+    }
+
+
+def parse_locations(raw_locations: str | list[str] | tuple[str, ...] | None) -> list[dict[str, str | None]]:
+    values: list[str]
+    if isinstance(raw_locations, (list, tuple)):
+        values = [str(v).strip() for v in raw_locations if str(v).strip()]
+    elif raw_locations:
+        values = [str(raw_locations).strip()]
+    else:
+        values = []
+
+    parsed_locations: list[dict[str, str | None]] = []
+    seen: dict[tuple[str | None, str | None, str | None], int] = {}
+    fallback_work_mode = None
+
+    for value in values:
+        candidates, work_mode = _location_text_candidates(value)
+        fallback_work_mode = fallback_work_mode or work_mode
+        if not candidates:
+            if work_mode:
+                candidate = {
+                    "raw_location": value,
+                    "city": None,
+                    "state": None,
+                    "country": None,
+                    "work_mode": work_mode,
+                }
+                key = (
+                    candidate["city"],
+                    candidate["state"],
+                    candidate["country"],
+                )
+                if key not in seen:
+                    seen[key] = len(parsed_locations)
+                    parsed_locations.append(candidate)
+            continue
+        for candidate_text in candidates:
+            parsed = _parse_single_location(candidate_text, work_mode)
+            key = (
+                parsed["city"],
+                parsed["state"],
+                parsed["country"],
+            )
+            if not any(key):
+                continue
+            if key in seen:
+                existing = parsed_locations[seen[key]]
+                if parsed["work_mode"] and not existing.get("work_mode"):
+                    existing["work_mode"] = parsed["work_mode"]
+                continue
+            else:
+                seen[key] = len(parsed_locations)
+                parsed_locations.append(parsed)
+
+    if not parsed_locations and fallback_work_mode:
+        parsed_locations.append(
+            {
+                "raw_location": None,
+                "city": None,
+                "state": None,
+                "country": None,
+                "work_mode": fallback_work_mode,
+            }
+        )
+    return parsed_locations
+
+
 def parse_location(raw_location: str | None) -> dict[str, str | None]:
+    parsed_locations = parse_locations(raw_location)
+    if parsed_locations:
+        first = parsed_locations[0]
+        return {
+            "city": first["city"],
+            "state": first["state"],
+            "country": first["country"],
+            "work_mode": first["work_mode"],
+        }
     if not raw_location:
         return {
             "city": None,
@@ -401,6 +707,121 @@ def _normalize_state_abbreviations(conn: sqlite3.Connection) -> None:
             )
 
 
+def _ensure_job_locations_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS job_locations (
+            job_id           TEXT NOT NULL,
+            position         INTEGER NOT NULL,
+            raw_location     TEXT,
+            location_city    TEXT,
+            location_state   TEXT,
+            location_country TEXT,
+            location_mode    TEXT,
+            PRIMARY KEY (job_id, position),
+            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_job_locations_job_id ON job_locations(job_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_job_locations_city ON job_locations(location_city)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_job_locations_state ON job_locations(location_state)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_job_locations_country ON job_locations(location_country)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_job_locations_mode ON job_locations(location_mode)"
+    )
+
+
+def _location_inputs_for_row(row: sqlite3.Row) -> list[str]:
+    values = []
+    location = (row["location"] or "").strip()
+    description = row["description"] or ""
+    if location:
+        values.append(location)
+    if row["source"] == "greenhouse" and description:
+        match = re.search(r"(?im)^Locations:\s*(.+)$", description)
+        if match:
+            values.append(match.group(1).strip())
+    return values
+
+
+def _replace_job_locations(
+    conn: sqlite3.Connection, job_id: str, locations: list[dict[str, str | None]]
+) -> None:
+    conn.execute("DELETE FROM job_locations WHERE job_id=?", (job_id,))
+    conn.executemany(
+        """
+        INSERT INTO job_locations (
+            job_id,
+            position,
+            raw_location,
+            location_city,
+            location_state,
+            location_country,
+            location_mode
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                job_id,
+                idx,
+                loc.get("raw_location"),
+                loc.get("city"),
+                loc.get("state"),
+                loc.get("country"),
+                loc.get("work_mode"),
+            )
+            for idx, loc in enumerate(locations)
+        ],
+    )
+
+
+def _sync_job_location_summary(
+    conn: sqlite3.Connection, job_id: str, locations: list[dict[str, str | None]]
+) -> None:
+    first = locations[0] if locations else {}
+    conn.execute(
+        """
+        UPDATE jobs
+        SET location_city=?,
+            location_state=?,
+            location_country=?,
+            location_mode=?
+        WHERE id=?
+        """,
+        (
+            first.get("city"),
+            first.get("state"),
+            first.get("country"),
+            first.get("work_mode"),
+            job_id,
+        ),
+    )
+
+
+def _rebuild_job_locations(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT id, source, location, description
+        FROM jobs
+        WHERE location IS NOT NULL AND TRIM(location) <> ''
+        """
+    ).fetchall()
+    for row in rows:
+        parsed = parse_locations(_location_inputs_for_row(row))
+        _replace_job_locations(conn, row["id"], parsed)
+        _sync_job_location_summary(conn, row["id"], parsed)
+
+
 def get_connection() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -461,6 +882,7 @@ def init_db():
             );
         """
         )
+        _ensure_job_locations_table(conn)
     _migrate()
 
 
@@ -489,6 +911,8 @@ def _migrate():
         }.issubset(existing):
             _backfill_location_fields(conn)
             _normalize_state_abbreviations(conn)
+            _ensure_job_locations_table(conn)
+            _rebuild_job_locations(conn)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_jobs_location_city ON jobs(location_city)"
             )
@@ -538,7 +962,18 @@ def insert_job(job: dict) -> bool:
     job_id = make_job_id(job["title"], job["company"], job.get("url", ""))
     if is_duplicate(job_id):
         return False
-    parsed_location = parse_location(job.get("location", ""))
+    location_values = job.get("locations") or job.get("location", "")
+    parsed_locations = parse_locations(location_values)
+    parsed_location = (
+        {
+            "city": parsed_locations[0]["city"],
+            "state": parsed_locations[0]["state"],
+            "country": parsed_locations[0]["country"],
+            "work_mode": parsed_locations[0]["work_mode"],
+        }
+        if parsed_locations
+        else parse_location(job.get("location", ""))
+    )
     with get_connection() as conn:
         conn.execute(
             """
@@ -586,6 +1021,8 @@ def insert_job(job: dict) -> bool:
                 "date_found": datetime.utcnow().isoformat(),
             },
         )
+        _ensure_job_locations_table(conn)
+        _replace_job_locations(conn, job_id, parsed_locations)
     return True
 
 

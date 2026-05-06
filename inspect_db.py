@@ -60,6 +60,15 @@ def show_job_detail(job_id: str):
     init_db()
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        location_rows = conn.execute(
+            """
+            SELECT *
+            FROM job_locations
+            WHERE job_id=?
+            ORDER BY position
+            """,
+            (job_id,),
+        ).fetchall()
 
     if not row:
         console.print(f"[red]Job '{job_id}' not found.[/red]")
@@ -74,17 +83,22 @@ def show_job_detail(job_id: str):
     header.append(f"{row['title']}\n", style="bold white")
     header.append(f"{row['company']}  •  {row.get('location','')}\n", style="cyan")
     header.append(f"Source: {row['source']}  |  Found: {row['date_found'][:10]}\n", style="dim")
-    if any(row.get(k) for k in ("location_city", "location_state", "location_country", "location_mode")):
-        loc_bits = []
-        if row.get("location_city"):
-            loc_bits.append(row["location_city"])
-        if row.get("location_state"):
-            loc_bits.append(row["location_state"])
-        if row.get("location_country"):
-            loc_bits.append(row["location_country"])
-        if row.get("location_mode"):
-            loc_bits.append(row["location_mode"])
-        header.append(f"Parsed: {', '.join(loc_bits)}\n", style="dim")
+    if location_rows:
+        rendered_locations = []
+        for loc in location_rows:
+            loc_bits = []
+            if loc["location_city"]:
+                loc_bits.append(loc["location_city"])
+            if loc["location_state"]:
+                loc_bits.append(loc["location_state"])
+            if loc["location_country"]:
+                loc_bits.append(loc["location_country"])
+            if loc["location_mode"]:
+                loc_bits.append(loc["location_mode"])
+            if loc_bits:
+                rendered_locations.append(", ".join(loc_bits))
+        if rendered_locations:
+            header.append(f"Parsed: {'; '.join(rendered_locations)}\n", style="dim")
     if row.get("url"):
         header.append(row["url"], style="link")
     console.print(Panel(header, title=f"[{style}]Fit Score: {score}[/{style}]", expand=False))
@@ -159,16 +173,24 @@ def _add_filters(where: list[str], params: list[object], args: argparse.Namespac
         where.append("source = ?")
         params.append(args.source)
     if args.city:
-        where.append("location_city = ?")
+        where.append(
+            "EXISTS (SELECT 1 FROM job_locations jl WHERE jl.job_id = jobs.id AND jl.location_city = ?)"
+        )
         params.append(args.city)
     if args.state:
-        where.append("location_state = ?")
+        where.append(
+            "EXISTS (SELECT 1 FROM job_locations jl WHERE jl.job_id = jobs.id AND jl.location_state = ?)"
+        )
         params.append(args.state)
     if args.country:
-        where.append("location_country = ?")
+        where.append(
+            "EXISTS (SELECT 1 FROM job_locations jl WHERE jl.job_id = jobs.id AND jl.location_country = ?)"
+        )
         params.append(args.country)
     if args.mode:
-        where.append("location_mode = ?")
+        where.append(
+            "EXISTS (SELECT 1 FROM job_locations jl WHERE jl.job_id = jobs.id AND jl.location_mode = ?)"
+        )
         params.append(args.mode)
 
 

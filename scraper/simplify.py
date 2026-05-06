@@ -48,6 +48,21 @@ def _build_search_payload(keyword: str, page: int) -> dict[str, Any]:
     }
 
 
+def _clean_locations(locations: list[str]) -> list[str]:
+    cleaned = []
+    seen = set()
+    for loc in locations:
+        value = (loc or "").strip()
+        if not value:
+            continue
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(value)
+    return cleaned
+
+
 def _pick_location(locations: list[str]) -> str:
     if not locations:
         return ""
@@ -116,7 +131,8 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
 
                     title = (doc.get("title") or "").strip()
                     company = (doc.get("company_name") or "").strip()
-                    location = _pick_location(doc.get("locations", []) or [])
+                    locations = _clean_locations(doc.get("locations", []) or [])
+                    location = _pick_location(locations)
 
                     if not title or not company:
                         continue
@@ -126,6 +142,7 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
                             "title": title,
                             "company": company,
                             "location": location,
+                            "locations": locations,
                             "url": "",
                             "source": "simplify",
                             "description": "",

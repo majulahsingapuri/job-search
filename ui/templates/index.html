@@ -34,26 +34,6 @@
     </div>
 
     <div>
-      <label for="location_search">Location</label>
-      <input
-        id="location_search"
-        type="search"
-        class="filter-search"
-        placeholder="Search locations"
-        autocomplete="off"
-        data-filter-search="location"
-      />
-      <div class="checklist" id="location">
-        {% for loc in locations %}
-        <label>
-          <input type="checkbox" name="location" value="{{ loc }}" {% if loc in filters.locations %}checked{% endif %} />
-          {{ loc }}
-        </label>
-        {% endfor %}
-      </div>
-    </div>
-
-    <div>
       <label for="mode">Work mode</label>
       <div class="checklist" id="mode">
         {% for m in modes %}
@@ -253,7 +233,7 @@
         {{ job['title'] }}
         {% endif %}
       </td>
-      <td>{{ job['location'] or '' }}</td>
+      <td title="{{ job['location'] or '' }}">{{ job['location_display'] or '' }}</td>
       <td>{{ job['source'] or '' }}</td>
       <td class="fit">{{ '%.1f'|format(job['fit_score']) if job['fit_score'] is not none else '' }}</td>
       <td>{{ job['resume_variant'] or '' }}</td>

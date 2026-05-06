@@ -91,13 +91,28 @@ def _build_detail_headers() -> dict[str, str]:
     }
 
 
+def _clean_locations(locations: list[str], work_type: str | None = None) -> list[str]:
+    cleaned = []
+    seen = set()
+    suffix = f" ({work_type.replace('_', ' ')})" if work_type else ""
+    for loc in locations:
+        value = (loc or "").strip()
+        if not value:
+            continue
+        if suffix:
+            value = f"{value}{suffix}"
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(value)
+    return cleaned
+
+
 def _pick_location(locations: list[str], work_type: str | None) -> str:
     if not locations:
         return work_type or ""
-    location = locations[0].strip()
-    if work_type:
-        return f"{location} ({work_type.replace('_', ' ')})"
-    return location
+    return _clean_locations(locations, work_type)[0]
 
 
 def _build_description(post: dict[str, Any]) -> str:
@@ -331,14 +346,16 @@ async def scrape_greenhouse(keywords: list[str], location: str) -> list[dict]:
                     if not title or not company or not public_url:
                         continue
 
+                    locations = _clean_locations(
+                        post.get("locations", []) or [],
+                        post.get("workType"),
+                    )
                     jobs.append(
                         {
                             "title": title,
                             "company": company,
-                            "location": _pick_location(
-                                post.get("locations", []) or [],
-                                post.get("workType"),
-                            ),
+                            "location": _pick_location(locations, None),
+                            "locations": locations,
                             "url": public_url,
                             "source": "greenhouse",
                             "description": _build_description(post),
@@ -407,6 +424,8 @@ async def enrich_greenhouse_descriptions(
             value = (parsed.get(field) or "").strip()
             if value:
                 job[field] = value
+                if field == "location":
+                    job["locations"] = _clean_locations([value])
         return job
 
     tasks = [_enrich_job(job) for job in jobs]

@@ -28,7 +28,6 @@ ALLOWED_SORTS = {
 }
 PAGE_SIZE = 50
 LOCATIONS_CACHE_TTL_SECONDS = 60
-_locations_cache: dict[str, object] = {"data": [], "expires_at": 0.0}
 _cities_cache: dict[str, object] = {"data": [], "expires_at": 0.0}
 _states_cache: dict[str, object] = {"data": [], "expires_at": 0.0}
 _countries_cache: dict[str, object] = {"data": [], "expires_at": 0.0}
@@ -56,7 +55,6 @@ def _safe_next_url(next_url: str | None) -> str:
 def _parse_filters(args) -> dict:
     statuses = [s for s in args.getlist("status") if s and s in ALLOWED_STATUSES]
     sources = [s for s in args.getlist("source") if s]
-    locations = [s for s in args.getlist("location") if s]
     cities = [s for s in args.getlist("city") if s]
     states = [s for s in args.getlist("state") if s]
     countries = [s for s in args.getlist("country") if s]
@@ -94,7 +92,6 @@ def _parse_filters(args) -> dict:
     return {
         "statuses": statuses,
         "sources": sources,
-        "locations": locations,
         "cities": cities,
         "states": states,
         "countries": countries,
@@ -123,27 +120,6 @@ def _get_sources() -> list[str]:
         return [r[0] for r in rows]
 
 
-def _get_locations() -> list[str]:
-    now = time.time()
-    if _locations_cache["expires_at"] > now:
-        return list(_locations_cache["data"])
-
-    with get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT location
-            FROM jobs
-            WHERE location IS NOT NULL AND location <> ''
-            ORDER BY location
-            """
-        ).fetchall()
-        locations = [r[0] for r in rows]
-
-    _locations_cache["data"] = locations
-    _locations_cache["expires_at"] = now + LOCATIONS_CACHE_TTL_SECONDS
-    return locations
-
-
 def _get_location_cities() -> list[str]:
     now = time.time()
     if _cities_cache["expires_at"] > now:
@@ -152,7 +128,7 @@ def _get_location_cities() -> list[str]:
         rows = conn.execute(
             """
             SELECT DISTINCT location_city
-            FROM jobs
+            FROM job_locations
             WHERE location_city IS NOT NULL AND location_city <> ''
             ORDER BY location_city
             """
@@ -171,7 +147,7 @@ def _get_location_states() -> list[str]:
         rows = conn.execute(
             """
             SELECT DISTINCT location_state
-            FROM jobs
+            FROM job_locations
             WHERE location_state IS NOT NULL AND location_state <> ''
             ORDER BY location_state
             """
@@ -190,7 +166,7 @@ def _get_location_countries() -> list[str]:
         rows = conn.execute(
             """
             SELECT DISTINCT location_country
-            FROM jobs
+            FROM job_locations
             WHERE location_country IS NOT NULL AND location_country <> ''
             ORDER BY location_country
             """
@@ -209,7 +185,7 @@ def _get_location_modes() -> list[str]:
         rows = conn.execute(
             """
             SELECT DISTINCT location_mode
-            FROM jobs
+            FROM job_locations
             WHERE location_mode IS NOT NULL AND location_mode <> ''
             ORDER BY location_mode
             """
@@ -234,30 +210,44 @@ def _query_jobs(
         where.append(f"source IN ({','.join(['?'] * len(filters['sources']))})")
         params.extend(filters["sources"])
 
-    if filters["locations"]:
-        where.append(f"location IN ({','.join(['?'] * len(filters['locations']))})")
-        params.extend(filters["locations"])
-
     if filters["cities"]:
         where.append(
-            f"location_city IN ({','.join(['?'] * len(filters['cities']))})"
+            "EXISTS ("
+            "SELECT 1 FROM job_locations jl "
+            "WHERE jl.job_id = jobs.id "
+            f"AND jl.location_city IN ({','.join(['?'] * len(filters['cities']))})"
+            ")"
         )
         params.extend(filters["cities"])
 
     if filters["states"]:
         where.append(
-            f"location_state IN ({','.join(['?'] * len(filters['states']))})"
+            "EXISTS ("
+            "SELECT 1 FROM job_locations jl "
+            "WHERE jl.job_id = jobs.id "
+            f"AND jl.location_state IN ({','.join(['?'] * len(filters['states']))})"
+            ")"
         )
         params.extend(filters["states"])
 
     if filters["countries"]:
         where.append(
-            f"location_country IN ({','.join(['?'] * len(filters['countries']))})"
+            "EXISTS ("
+            "SELECT 1 FROM job_locations jl "
+            "WHERE jl.job_id = jobs.id "
+            f"AND jl.location_country IN ({','.join(['?'] * len(filters['countries']))})"
+            ")"
         )
         params.extend(filters["countries"])
 
     if filters["modes"]:
-        where.append(f"location_mode IN ({','.join(['?'] * len(filters['modes']))})")
+        where.append(
+            "EXISTS ("
+            "SELECT 1 FROM job_locations jl "
+            "WHERE jl.job_id = jobs.id "
+            f"AND jl.location_mode IN ({','.join(['?'] * len(filters['modes']))})"
+            ")"
+        )
         params.extend(filters["modes"])
 
     if filters["q"]:
@@ -498,12 +488,54 @@ def _get_outreach_logs(job_ids: list[str]) -> dict[str, list[dict]]:
     return out
 
 
+def _format_parsed_location(row: sqlite3.Row) -> str:
+    parts = []
+    if row["location_city"]:
+        parts.append(row["location_city"])
+    if row["location_state"]:
+        parts.append(row["location_state"])
+    if row["location_country"]:
+        parts.append(row["location_country"])
+    value = ", ".join(parts)
+    if row["location_mode"]:
+        if value:
+            value = f"{value} ({row['location_mode']})"
+        else:
+            value = row["location_mode"]
+    return value
+
+
+def _get_job_locations(job_ids: list[str]) -> dict[str, str]:
+    if not job_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(job_ids))
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM job_locations
+                WHERE job_id IN ({placeholders})
+                ORDER BY job_id, position
+                """,
+                job_ids,
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+
+    grouped: dict[str, list[str]] = {}
+    for row in rows:
+        rendered = _format_parsed_location(row)
+        if rendered:
+            grouped.setdefault(row["job_id"], []).append(rendered)
+    return {job_id: "; ".join(values) for job_id, values in grouped.items()}
+
+
 @app.get("/")
 def index():
     filters = _parse_filters(request.args)
     jobs, total, page, total_pages, error = _query_jobs(filters)
     sources = _get_sources() if not error else []
-    locations = _get_locations() if not error else []
     cities = _get_location_cities() if not error else []
     states = _get_location_states() if not error else []
     countries = _get_location_countries() if not error else []
@@ -520,10 +552,14 @@ def index():
 
     job_ids = [row["id"] for row in jobs]
     outreach_map = _get_outreach_logs(job_ids)
+    location_map = _get_job_locations(job_ids)
 
     jobs_out = []
     for row in jobs:
         data = dict(row)
+        data["location_display"] = location_map.get(data.get("id") or "") or data.get(
+            "location"
+        )
         outreach_logs = outreach_map.get(data.get("id") or "", [])
         data["outreach_log"] = outreach_logs
         data["outreach_total"] = len(outreach_logs)
@@ -559,7 +595,6 @@ def index():
         "index.html",
         jobs=jobs_out,
         sources=sources,
-        locations=locations,
         cities=cities,
         states=states,
         countries=countries,
