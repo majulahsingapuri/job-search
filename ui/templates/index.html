@@ -175,9 +175,32 @@
 </div>
 
 {% if not error %}
+<form id="bulk-status-form" class="bulk-status" method="post" action="/jobs/bulk-status">
+  <input type="hidden" name="next" value="{{ next_url }}" />
+  <div>
+    <span id="bulk-selected-count">0 selected</span>
+  </div>
+  <div class="bulk-status-controls">
+    <label for="bulk_status">Set status</label>
+    <select id="bulk_status" name="status">
+      {% for s in statuses %}
+      <option value="{{ s }}">{{ s }}</option>
+      {% endfor %}
+    </select>
+    <button id="bulk-status-submit" type="submit" disabled>Update selected</button>
+  </div>
+</form>
+
 <table>
   <thead>
     <tr>
+      <th>
+        <input
+          id="select_all_jobs"
+          type="checkbox"
+          aria-label="Select all jobs on this page"
+        />
+      </th>
       <th>
         <a class="sort-link" href="{{ sort_links['date'].url }}">
           Date
@@ -241,6 +264,16 @@
   <tbody>
     {% for job in jobs %}
     <tr>
+      <td>
+        <input
+          class="job-select"
+          type="checkbox"
+          name="job_id"
+          value="{{ job['id'] }}"
+          form="bulk-status-form"
+          aria-label="Select {{ job['title'] }} at {{ job['company'] }}"
+        />
+      </td>
       <td>{{ job['date_found'][:10] if job['date_found'] else '' }}</td>
       <td>{{ job['company'] }}</td>
       <td class="title">
@@ -336,6 +369,49 @@
 
 {% block scripts %}
 <script>
+  const bulkForm = document.querySelector("#bulk-status-form");
+  const bulkSubmit = document.querySelector("#bulk-status-submit");
+  const bulkCount = document.querySelector("#bulk-selected-count");
+  const selectAllJobs = document.querySelector("#select_all_jobs");
+  const jobSelects = Array.from(document.querySelectorAll(".job-select"));
+
+  const updateBulkControls = () => {
+    const selected = jobSelects.filter((checkbox) => checkbox.checked).length;
+    if (bulkCount) {
+      bulkCount.textContent = `${selected} selected`;
+    }
+    if (bulkSubmit) {
+      bulkSubmit.disabled = selected === 0;
+    }
+    if (selectAllJobs) {
+      selectAllJobs.checked = selected > 0 && selected === jobSelects.length;
+      selectAllJobs.indeterminate = selected > 0 && selected < jobSelects.length;
+    }
+  };
+
+  if (selectAllJobs) {
+    selectAllJobs.addEventListener("change", () => {
+      jobSelects.forEach((checkbox) => {
+        checkbox.checked = selectAllJobs.checked;
+      });
+      updateBulkControls();
+    });
+  }
+
+  jobSelects.forEach((checkbox) => {
+    checkbox.addEventListener("change", updateBulkControls);
+  });
+
+  if (bulkForm) {
+    bulkForm.addEventListener("submit", (event) => {
+      if (!jobSelects.some((checkbox) => checkbox.checked)) {
+        event.preventDefault();
+      }
+    });
+  }
+
+  updateBulkControls();
+
   document.querySelectorAll(".status-select").forEach((select) => {
     select.addEventListener("change", () => {
       select.form.submit();

@@ -274,6 +274,42 @@
         color: var(--muted);
       }
 
+      .bulk-status {
+        display: flex;
+        justify-content: space-between;
+        align-items: end;
+        gap: 12px;
+        margin-top: 16px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      .bulk-status-controls {
+        display: flex;
+        align-items: end;
+        gap: 10px;
+      }
+
+      .bulk-status label {
+        margin-bottom: 4px;
+      }
+
+      .bulk-status select {
+        min-width: 150px;
+      }
+
+      .bulk-status button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      #select_all_jobs,
+      .job-select {
+        width: auto;
+      }
+
       .copy-btn {
         margin-top: 6px;
         padding: 6px 10px;

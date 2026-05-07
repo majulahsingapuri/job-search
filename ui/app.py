@@ -688,5 +688,24 @@ def update_status(job_id: str):
     return redirect(next_url)
 
 
+@app.post("/jobs/bulk-status")
+def update_bulk_status():
+    status = (request.form.get("status") or "").strip()
+    job_ids = [job_id for job_id in request.form.getlist("job_id") if job_id]
+    next_url = _safe_next_url(request.form.get("next"))
+
+    if status not in ALLOWED_STATUSES or not job_ids:
+        return redirect(next_url)
+
+    placeholders = ",".join(["?"] * len(job_ids))
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE jobs SET status=? WHERE id IN ({placeholders})",
+            [status, *job_ids],
+        )
+
+    return redirect(next_url)
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
