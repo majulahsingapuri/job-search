@@ -26,6 +26,11 @@ ALLOWED_SORTS = {
     "fit": "fit_score",
     "status": "status",
 }
+RESUME_VARIANT_LABELS = {
+    "ml_engineer": "ML Engineer",
+    "data_scientist": "Data Scientist",
+    "ai_researcher": "AI Researcher",
+}
 PAGE_SIZE = 50
 LOCATIONS_CACHE_TTL_SECONDS = 60
 _cities_cache: dict[str, object] = {"data": [], "expires_at": 0.0}
@@ -59,6 +64,7 @@ def _parse_filters(args) -> dict:
     states = [s for s in args.getlist("state") if s]
     countries = [s for s in args.getlist("country") if s]
     modes = [s for s in args.getlist("mode") if s]
+    resume_variants = [s for s in args.getlist("resume_variant") if s]
 
     q = (args.get("q") or "").strip()
 
@@ -96,6 +102,7 @@ def _parse_filters(args) -> dict:
         "states": states,
         "countries": countries,
         "modes": modes,
+        "resume_variants": resume_variants,
         "q": q,
         "min_fit_score": min_fit_score,
         "min_fit_score_raw": min_fit_score_raw,
@@ -118,6 +125,26 @@ def _get_sources() -> list[str]:
             """
         ).fetchall()
         return [r[0] for r in rows]
+
+
+def _format_resume_variant_label(variant: str) -> str:
+    return RESUME_VARIANT_LABELS.get(variant, variant.replace("_", " ").title())
+
+
+def _get_resume_variants() -> list[dict[str, str]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT resume_variant
+            FROM jobs
+            WHERE resume_variant IS NOT NULL AND resume_variant <> ''
+            ORDER BY resume_variant
+            """
+        ).fetchall()
+        return [
+            {"key": row[0], "label": _format_resume_variant_label(row[0])}
+            for row in rows
+        ]
 
 
 def _get_location_cities() -> list[str]:
@@ -249,6 +276,12 @@ def _query_jobs(
             ")"
         )
         params.extend(filters["modes"])
+
+    if filters["resume_variants"]:
+        where.append(
+            f"resume_variant IN ({','.join(['?'] * len(filters['resume_variants']))})"
+        )
+        params.extend(filters["resume_variants"])
 
     if filters["q"]:
         q = f"%{filters['q'].lower()}%"
@@ -536,6 +569,7 @@ def index():
     filters = _parse_filters(request.args)
     jobs, total, page, total_pages, error = _query_jobs(filters)
     sources = _get_sources() if not error else []
+    resume_variants = _get_resume_variants() if not error else []
     cities = _get_location_cities() if not error else []
     states = _get_location_states() if not error else []
     countries = _get_location_countries() if not error else []
@@ -599,6 +633,7 @@ def index():
         states=states,
         countries=countries,
         modes=modes,
+        resume_variants=resume_variants,
         filters=filters,
         statuses=ALLOWED_STATUSES,
         next_url=next_url,

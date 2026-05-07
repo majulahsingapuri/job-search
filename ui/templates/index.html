@@ -46,6 +46,23 @@
     </div>
 
     <div>
+      <label for="resume_variant">Resume type</label>
+      <div class="checklist" id="resume_variant">
+        {% for resume in resume_variants %}
+        <label>
+          <input
+            type="checkbox"
+            name="resume_variant"
+            value="{{ resume.key }}"
+            {% if resume.key in filters.resume_variants %}checked{% endif %}
+          />
+          {{ resume.label }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
       <label for="city_search">City</label>
       <input
         id="city_search"
