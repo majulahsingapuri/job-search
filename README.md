@@ -17,7 +17,8 @@ CRON (daily @ SCRAPE_TIME)
 │  Stage 1: Scrape    │  LinkedIn · Simplify.jobs · Greenhouse · HN Who's Hiring
 │                     │  Playwright + source APIs + saved auth state
 └────────┬────────────┘
-         │ new jobs → SQLite (deduplicated by SHA-256 ID)
+         │ listing metadata → pre-enrichment dedupe → enrich new jobs only
+         │ new jobs → SQLite (final dedupe by SHA-256 ID + source external ID)
          ▼
 ┌─────────────────────┐
 │  Stage 2: Score     │  Configured LLM provider + model
@@ -397,6 +398,10 @@ email dashboard and use that as `SMTP_PASS`.
 - Greenhouse scraping uses the my.greenhouse.io Inertia JSON endpoint with a
   saved MyGreenhouse session. Full descriptions are extracted from direct
   Greenhouse job pages or Greenhouse embed iframes for external career pages.
+- LinkedIn, Simplify, and Greenhouse skip description enrichment for jobs that
+  are already in SQLite. The scraper filters listing metadata first, then the DB
+  layer performs a final insert-time dedupe using the canonical SHA-256 job ID
+  and source external IDs such as Simplify `posting_id` and Greenhouse job IDs.
 - HN scraping uses the Algolia search API and Hacker News Firebase item API,
   no browser needed.
 - LLM API calls are batched (default 3 concurrent) to stay within rate limits.

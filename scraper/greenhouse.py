@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup
 from rich.console import Console
 
 from config.settings import get_settings
+from db.database import filter_new_jobs
 from scraper.greenhouse_auth import (
     greenhouse_cookie_header_from_state,
     greenhouse_inertia_version_from_state,
@@ -358,6 +359,7 @@ async def scrape_greenhouse(keywords: list[str], location: str) -> list[dict]:
                             "locations": locations,
                             "url": public_url,
                             "source": "greenhouse",
+                            "source_external_id": job_id,
                             "description": _build_description(post),
                             "greenhouse_id": job_id,
                         }
@@ -370,6 +372,14 @@ async def scrape_greenhouse(keywords: list[str], location: str) -> list[dict]:
 
             console.log(f"  Found {total_hits} hits")
             await asyncio.sleep(1)
+
+        found_count = len(jobs)
+        jobs = filter_new_jobs(jobs)
+        skipped_count = found_count - len(jobs)
+        if skipped_count:
+            console.log(
+                f"  Skipped enrichment for {skipped_count} existing Greenhouse jobs"
+            )
 
         jobs = await enrich_greenhouse_descriptions(jobs, session)
 

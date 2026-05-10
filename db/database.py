@@ -844,6 +844,7 @@ def init_db():
                 location_mode    TEXT,
                 url              TEXT,
                 source           TEXT,
+                source_external_id TEXT,
                 description      TEXT,
                 date_found       TEXT NOT NULL,
                 fit_score        REAL,
@@ -896,6 +897,7 @@ def _migrate():
         ("location_state", "TEXT"),
         ("location_country", "TEXT"),
         ("location_mode", "TEXT"),
+        ("source_external_id", "TEXT"),
     ]
     with get_connection() as conn:
         existing = {r[1] for r in conn.execute("PRAGMA table_info(jobs)").fetchall()}
@@ -926,6 +928,10 @@ def _migrate():
                 "CREATE INDEX IF NOT EXISTS idx_jobs_location_mode ON jobs(location_mode)"
             )
         conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_source_external_id "
+            "ON jobs(source, source_external_id)"
+        )
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS outreach_log (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -950,6 +956,26 @@ def make_job_id(title: str, company: str, url: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+def make_source_external_id(job: dict) -> str:
+    source_external_id = str(job.get("source_external_id") or "").strip()
+    if source_external_id:
+        return source_external_id
+
+    source = (job.get("source") or "").strip().lower()
+    if source == "simplify":
+        return str(job.get("posting_id") or "").strip()
+    if source == "greenhouse":
+        return str(job.get("greenhouse_id") or "").strip()
+    return ""
+
+
+def _candidate_job_id(job: dict) -> str:
+    url = (job.get("url") or "").strip()
+    if not url:
+        return ""
+    return make_job_id(job["title"], job["company"], url)
+
+
 def is_duplicate(job_id: str) -> bool:
     with get_connection() as conn:
         return (
@@ -958,9 +984,79 @@ def is_duplicate(job_id: str) -> bool:
         )
 
 
+def _set_source_external_id_if_missing(job_id: str, source_external_id: str) -> None:
+    if not source_external_id:
+        return
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET source_external_id = ?
+            WHERE id = ?
+              AND (source_external_id IS NULL OR TRIM(source_external_id) = '')
+            """,
+            (source_external_id, job_id),
+        )
+
+
+def is_existing_job(job: dict) -> bool:
+    candidate_id = _candidate_job_id(job)
+    source = (job.get("source") or "").strip()
+    source_external_id = make_source_external_id(job)
+
+    clauses = []
+    params: list[str] = []
+    if candidate_id:
+        clauses.append("id = ?")
+        params.append(candidate_id)
+    if source and source_external_id:
+        clauses.append("(source = ? AND source_external_id = ?)")
+        params.extend([source, source_external_id])
+
+    if not clauses:
+        return False
+
+    with get_connection() as conn:
+        query = f"SELECT 1 FROM jobs WHERE {' OR '.join(clauses)} LIMIT 1"
+        return conn.execute(query, params).fetchone() is not None
+
+
+def filter_new_jobs(jobs: list[dict]) -> list[dict]:
+    new_jobs: list[dict] = []
+    seen_ids: set[str] = set()
+    seen_external_ids: set[tuple[str, str]] = set()
+
+    for job in jobs:
+        candidate_id = _candidate_job_id(job)
+        source = (job.get("source") or "").strip()
+        source_external_id = make_source_external_id(job)
+        external_key = (
+            (source, source_external_id) if source and source_external_id else None
+        )
+
+        if candidate_id and candidate_id in seen_ids:
+            continue
+        if external_key and external_key in seen_external_ids:
+            continue
+        if is_existing_job(job):
+            continue
+
+        if candidate_id:
+            seen_ids.add(candidate_id)
+        if external_key:
+            seen_external_ids.add(external_key)
+        new_jobs.append(job)
+
+    return new_jobs
+
+
 def insert_job(job: dict) -> bool:
     job_id = make_job_id(job["title"], job["company"], job.get("url", ""))
+    source_external_id = make_source_external_id(job) or None
     if is_duplicate(job_id):
+        _set_source_external_id_if_missing(job_id, source_external_id or "")
+        return False
+    if source_external_id and is_existing_job(job):
         return False
     location_values = job.get("locations") or job.get("location", "")
     parsed_locations = parse_locations(location_values)
@@ -988,6 +1084,7 @@ def insert_job(job: dict) -> bool:
                 location_mode,
                 url,
                 source,
+                source_external_id,
                 description,
                 date_found
             )
@@ -1002,6 +1099,7 @@ def insert_job(job: dict) -> bool:
                 :location_mode,
                 :url,
                 :source,
+                :source_external_id,
                 :description,
                 :date_found
             )
@@ -1017,6 +1115,7 @@ def insert_job(job: dict) -> bool:
                 "location_mode": parsed_location["work_mode"],
                 "url": job.get("url", ""),
                 "source": job.get("source", ""),
+                "source_external_id": source_external_id,
                 "description": job.get("description", ""),
                 "date_found": datetime.utcnow().isoformat(),
             },

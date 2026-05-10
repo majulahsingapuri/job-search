@@ -17,6 +17,7 @@ from scraper.linkedin_auth import (
 )
 from utils import DEFAULT_LINKEDIN_STORAGE_STATE, get_linkedin_storage_state_path
 from config.settings import get_settings
+from db.database import filter_new_jobs
 
 console = Console()
 settings = get_settings()
@@ -329,6 +330,14 @@ async def scrape_linkedin(
                 except Exception as e:
                     console.log(f"  [red]Error: {e}[/red]")
                     break
+
+        found_count = len(jobs)
+        jobs = filter_new_jobs(jobs)
+        skipped_count = found_count - len(jobs)
+        if skipped_count:
+            console.log(
+                f"  Skipped enrichment for {skipped_count} existing LinkedIn jobs"
+            )
 
         jobs = await enrich_job_descriptions(
             jobs, context, concurrency=enrich_concurrency

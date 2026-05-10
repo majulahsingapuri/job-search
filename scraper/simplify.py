@@ -7,9 +7,12 @@ import asyncio
 import html
 import re
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import aiohttp
 from rich.console import Console
+
+from db.database import filter_new_jobs
 
 console = Console()
 
@@ -81,6 +84,63 @@ def _html_to_text(raw_html: str) -> str:
     return text
 
 
+def _is_simplify_redirect_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return (
+        parsed.netloc.lower() == "simplify.jobs"
+        and parsed.path.startswith("/jobs/click/")
+    )
+
+
+def _canonical_job_url(url: str) -> str:
+    """Normalize external job-board URLs to the same shape as direct scrapers."""
+    parsed = urlparse((url or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return (url or "").strip()
+
+    netloc = parsed.netloc.lower()
+    query = parsed.query
+    if netloc in {"job-boards.greenhouse.io", "boards.greenhouse.io"}:
+        query = ""
+
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path.rstrip("/") or parsed.path,
+            parsed.params,
+            query,
+            "",
+        )
+    )
+
+
+async def _resolve_redirect_url(session: aiohttp.ClientSession, url: str) -> str:
+    if not url:
+        return ""
+
+    async def _request(method: str) -> str:
+        async with session.request(
+            method,
+            url,
+            allow_redirects=True,
+            max_redirects=10,
+        ) as resp:
+            if resp.status >= 400:
+                return ""
+            return str(resp.url)
+
+    for method in ("HEAD", "GET"):
+        try:
+            resolved = await _request(method)
+        except Exception:
+            resolved = ""
+        if resolved and not _is_simplify_redirect_url(resolved):
+            return _canonical_job_url(resolved)
+
+    return _canonical_job_url(url)
+
+
 async def scrape_simplify(keywords: list[str]) -> list[dict]:
     """
     Returns list of job dicts:
@@ -145,6 +205,7 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
                             "locations": locations,
                             "url": "",
                             "source": "simplify",
+                            "source_external_id": posting_id,
                             "description": "",
                             "posting_id": posting_id,
                         }
@@ -154,6 +215,14 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
 
             console.log(f"  Found {total_hits} hits")
             await asyncio.sleep(1)
+
+        found_count = len(jobs)
+        jobs = filter_new_jobs(jobs)
+        skipped_count = found_count - len(jobs)
+        if skipped_count:
+            console.log(
+                f"  Skipped enrichment for {skipped_count} existing Simplify jobs"
+            )
 
         jobs = await enrich_job_descriptions(jobs, session)
 
@@ -195,7 +264,12 @@ async def enrich_job_descriptions(
 
         description_html = data.get("description", "") or ""
         job["description"] = _html_to_text(description_html)[:3000]
-        job["url"] = data.get("url") or f"https://simplify.jobs/jobs/click/{posting_id}"
+        detail_url = (
+            data.get("url") or f"https://simplify.jobs/jobs/click/{posting_id}"
+        ).strip()
+        if _is_simplify_redirect_url(detail_url):
+            detail_url = await _resolve_redirect_url(session, detail_url)
+        job["url"] = _canonical_job_url(detail_url)
         return job
 
     tasks = [_enrich_job(job) for job in jobs]
