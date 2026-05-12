@@ -147,6 +147,14 @@ Edit `.env` (make sure to add your LLM provider API key):
 | `LINKEDIN_ENRICH_DELAY_MS`    | Base delay (ms) before each enrichment request (default: `1000`) |
 | `LINKEDIN_ENRICH_JITTER_MS`   | Extra random delay (ms) added to base delay (default: `500`)     |
 
+#### Simplify: Scrape
+
+| Variable             | What to set                                                         |
+|----------------------|---------------------------------------------------------------------|
+| `SIMPLIFY_MAX_PAGES` | Max Simplify pages to scrape per keyword (default: `3`)             |
+| `SIMPLIFY_PER_PAGE`  | Simplify results per page (default: `50`)                           |
+| `JOB_LOCATION`       | Countries use country filtering; cities use Simplify geocoding; `Remote` defaults to remote USA. |
+
 #### Greenhouse: Session + Scrape
 
 | Variable                     | What to set                                                                 |

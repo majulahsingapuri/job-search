@@ -15,16 +15,15 @@ from typing import Any
 
 import aiohttp
 from bs4 import BeautifulSoup
-from rich.console import Console
 from yarl import URL
 
+from console_utils import console
 from config.settings import get_settings
 from utils import (
     DEFAULT_GREENHOUSE_STORAGE_STATE,
     get_greenhouse_storage_state_path,
 )
 
-console = Console()
 settings = get_settings()
 
 GREENHOUSE_ORIGIN = "https://my.greenhouse.io"

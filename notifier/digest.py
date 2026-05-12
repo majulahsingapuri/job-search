@@ -14,14 +14,13 @@ import smtplib
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from rich.console import Console
 
+from console_utils import console
 from db.database import get_unnotified_jobs, mark_notified
 from config.resumes import RESUME_VARIANTS
 from utils import LINKEDIN_PEOPLE_SEARCH_URL
 from config.settings import get_settings
 
-console = Console()
 settings = get_settings()
 
 

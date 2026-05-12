@@ -12,7 +12,6 @@ from datetime import datetime
 from urllib.parse import quote
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
-from rich.console import Console
 from rich.progress import (
     Progress,
     SpinnerColumn,
@@ -21,6 +20,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
+from console_utils import console
 from db.database import has_outreach_profile, insert_outreach_log, update_job_status
 from utils import (
     DEFAULT_LINKEDIN_STORAGE_STATE,
@@ -31,7 +31,6 @@ from utils import (
 )
 from config.settings import get_settings
 
-console = Console()
 settings = get_settings()
 
 LOCATION_FILTER = "United States"
@@ -503,6 +502,7 @@ async def run_linkedin_outreach(
         )
 
         with progress:
+            log = progress.console.log
             jobs_task = progress.add_task("Outreach jobs", total=len(jobs))
             contacts_task = progress.add_task("Contacts attempted", total=None)
 
@@ -547,7 +547,7 @@ async def run_linkedin_outreach(
                 ]
 
                 for query_type, query_text, use_schools in query_set:
-                    console.log(
+                    log(
                         f"[cyan]LinkedIn:[/cyan] {job['company']} — {query_type} search"
                     )
                     people, err = await _search_people(
@@ -555,11 +555,11 @@ async def run_linkedin_outreach(
                     )
                     if err:
                         errors += 1
-                        console.log(
+                        log(
                             f"[yellow]LinkedIn outreach: search error ({err}) for {job['company']}[/yellow]"
                         )
                         continue
-                    console.log(
+                    log(
                         f"[dim]Found {len(people)} people for '{query_text}'[/dim]"
                     )
 

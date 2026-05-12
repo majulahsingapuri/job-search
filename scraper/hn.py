@@ -7,9 +7,8 @@ No browser needed — pure HTTP. Very reliable.
 import aiohttp
 import asyncio
 from datetime import datetime, timezone
-from rich.console import Console
 
-console = Console()
+from console_utils import console
 
 HN_SEARCH_API = "https://hn.algolia.com/api/v1/search"
 HN_ITEMS_API = "https://hacker-news.firebaseio.com/v0/item/{}.json"

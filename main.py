@@ -21,9 +21,9 @@ import sys
 import schedule
 import time
 from datetime import datetime
-from rich.console import Console
 from rich.table import Table
 
+from console_utils import console
 from config.settings import get_settings
 
 from db.database import (
@@ -44,7 +44,6 @@ from agent.pipeline import run_routing_pipeline
 from agent.linkedin_outreach import run_linkedin_outreach
 from notifier.digest import send_digest
 
-console = Console()
 settings = get_settings()
 
 KEYWORDS = settings.job_keywords

@@ -10,13 +10,15 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import aiohttp
-from rich.console import Console
 
+from console_utils import console, progress_bar
+from config.settings import get_settings
 from db.database import filter_new_jobs
 
-console = Console()
+settings = get_settings()
 
 SIMPLIFY_SEARCH_URL = "https://js-ha.simplify.jobs/multi_search"
+SIMPLIFY_LOCATION_URL = "https://simplify.jobs/api/location"
 SIMPLIFY_TYPESENSE_API_KEY = (
     "SWF1ODFZbzBkcVlVdnVwT2FqUE5EZ3JpSk5hVmdpUHg1SklXWEdGbHZVRT1POHJie"
     "yJleGNsdWRlX2ZpZWxkcyI6ImNvbXBhbnlfdXJsLGNhdGVnb3JpZXMsYWRkaXRpb2"
@@ -24,31 +26,205 @@ SIMPLIFY_TYPESENSE_API_KEY = (
     "luZHVzdHJpZXMsaXNfc2ltcGxlX2FwcGxpY2F0aW9uLGpvYl9saXN0cyxsZWFkZX"
     "JzaGlwX3R5cGUsc2VjdXJpdHlfY2xlYXJhbmNlLHNraWxscyx1cmwifQ=="
 )
-SIMPLIFY_FILTER_BY = "countries:=[`United States`]"
-SIMPLIFY_PER_PAGE = 50
-SIMPLIFY_MAX_PAGES = 3
+SIMPLIFY_COUNTRY_LAYERS = {"country", "dependency"}
+SIMPLIFY_REMOTE_LOCATIONS = {"remote", "anywhere", "worldwide"}
+SIMPLIFY_DEFAULT_REMOTE_COUNTRY = "USA"
+SIMPLIFY_REMOTE_COUNTRY_ALIASES = {
+    "australia": "Australia",
+    "canada": "Canada",
+    "france": "France",
+    "germany": "Germany",
+    "india": "India",
+    "ireland": "Ireland",
+    "italy": "Italy",
+    "spain": "Spain",
+    "united arab emirates": "United Arab Emirates",
+    "united kingdom": "UK",
+    "united states": "USA",
+    "united states of america": "USA",
+    "uae": "United Arab Emirates",
+    "uk": "UK",
+    "u.k": "UK",
+    "u.k.": "UK",
+    "us": "USA",
+    "usa": "USA",
+}
+SIMPLIFY_COUNTRY_ALIASES = {
+    "united states": "United States",
+    "united states of america": "United States",
+    "us": "United States",
+    "usa": "United States",
+}
 
 SIMPLIFY_DETAIL_URL = (
     "https://api.simplify.jobs/v2/job-posting/:id/{posting_id}/company"
 )
 
 
-def _build_search_payload(keyword: str, page: int) -> dict[str, Any]:
-    return {
-        "searches": [
-            {
-                "query_by": "title,company_name,functions,locations",
-                "per_page": SIMPLIFY_PER_PAGE,
-                "sort_by": "_text_match:desc,start_date:desc",
-                "highlight_full_fields": "title,company_name,functions,locations",
-                "collection": "jobs",
-                "q": keyword,
-                "filter_by": SIMPLIFY_FILTER_BY,
-                "max_facet_values": 50,
-                "page": page,
-            }
-        ]
+def _typesense_value(value: str) -> str:
+    return value.replace("`", "").strip()
+
+
+def _format_geo(value: float) -> str:
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def _build_geolocation_filter(bbox: list[Any]) -> str:
+    min_lon, min_lat, max_lon, max_lat = [float(value) for value in bbox[:4]]
+    points = (
+        (max_lat, max_lon),
+        (max_lat, min_lon),
+        (min_lat, min_lon),
+        (min_lat, max_lon),
+    )
+    coordinates = ", ".join(
+        f"{_format_geo(lat)}, {_format_geo(lon)}" for lat, lon in points
+    )
+    return f"geolocations:({coordinates})"
+
+
+def _is_remote_location(location: str) -> bool:
+    normalized = _normalize_location(location)
+    return (
+        normalized in SIMPLIFY_REMOTE_LOCATIONS
+        or normalized.startswith("remote ")
+        or normalized.endswith(" remote")
+    )
+
+
+def _country_filter(country: str) -> str:
+    return f"countries:=[`{_typesense_value(country)}`]"
+
+
+def _normalize_location(location: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", location.lower())
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _remote_country(location: str) -> str:
+    normalized = _normalize_location(location)
+    for alias, country in sorted(
+        SIMPLIFY_REMOTE_COUNTRY_ALIASES.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        alias_normalized = _normalize_location(alias)
+        if re.search(rf"\b{re.escape(alias_normalized)}\b", normalized):
+            return country
+    return SIMPLIFY_DEFAULT_REMOTE_COUNTRY
+
+
+def _remote_filter(location: str) -> str:
+    country = _remote_country(location)
+    remote_location = f"Remote in {country}"
+    return (
+        f"locations:=[`{_typesense_value(remote_location)}`] "
+        "&& travel_requirements:[`Remote`]"
+    )
+
+
+async def _build_location_filter(
+    session: aiohttp.ClientSession, location: str
+) -> str:
+    location = (location or "").strip()
+    if not location:
+        return ""
+
+    country = SIMPLIFY_COUNTRY_ALIASES.get(location.lower())
+    if country:
+        console.log(f"[cyan]Simplify:[/cyan] Location filter: {country}")
+        return _country_filter(country)
+
+    if _is_remote_location(location):
+        console.log(
+            f"[cyan]Simplify:[/cyan] Location filter: Remote in "
+            f"{_remote_country(location)}"
+        )
+        return _remote_filter(location)
+
+    try:
+        async with session.get(
+            SIMPLIFY_LOCATION_URL,
+            params={"text": location},
+            headers={"Accept": "application/json"},
+        ) as resp:
+            if resp.status != 200:
+                console.log(
+                    f"[yellow]Simplify:[/yellow] Location lookup HTTP {resp.status}; "
+                    "searching without a location filter."
+                )
+                return ""
+            data = await resp.json()
+    except Exception as e:
+        console.log(
+            f"[yellow]Simplify:[/yellow] Location lookup failed for "
+            f"'{location}': {e}; searching without a location filter."
+        )
+        return ""
+
+    features = data.get("data", {}).get("features", [])
+    if not features:
+        console.log(
+            f"[yellow]Simplify:[/yellow] No location match for '{location}'; "
+            "searching without a location filter."
+        )
+        return ""
+
+    feature = features[0]
+    properties = feature.get("properties", {})
+    layer = (properties.get("layer") or "").strip().lower()
+    label = (properties.get("label") or properties.get("name") or location).strip()
+
+    if layer in SIMPLIFY_COUNTRY_LAYERS:
+        country = (
+            properties.get("country")
+            or properties.get("name")
+            or properties.get("label")
+            or location
+        )
+        console.log(f"[cyan]Simplify:[/cyan] Location filter: {label}")
+        return _country_filter(country)
+
+    bbox = feature.get("bbox")
+    if isinstance(bbox, list) and len(bbox) >= 4:
+        try:
+            filter_by = _build_geolocation_filter(bbox)
+        except (TypeError, ValueError):
+            filter_by = ""
+        if filter_by:
+            console.log(f"[cyan]Simplify:[/cyan] Location filter: {label}")
+            return filter_by
+
+    country = properties.get("country")
+    if country:
+        console.log(
+            f"[yellow]Simplify:[/yellow] Location match for '{location}' has no "
+            f"bounding box; falling back to country filter: {country}"
+        )
+        return _country_filter(country)
+
+    console.log(
+        f"[yellow]Simplify:[/yellow] Could not build a location filter for "
+        f"'{location}'; searching without a location filter."
+    )
+    return ""
+
+
+def _build_search_payload(keyword: str, page: int, filter_by: str) -> dict[str, Any]:
+    search: dict[str, Any] = {
+        "query_by": "title,company_name,functions,locations",
+        "per_page": settings.simplify_per_page,
+        "sort_by": "_text_match:desc,start_date:desc",
+        "highlight_full_fields": "title,company_name,functions,locations",
+        "collection": "jobs",
+        "q": keyword,
+        "max_facet_values": 50,
+        "page": page,
     }
+    if filter_by:
+        search["filter_by"] = filter_by
+
+    return {"searches": [search]}
 
 
 def _clean_locations(locations: list[str]) -> list[str]:
@@ -154,12 +330,16 @@ async def scrape_simplify(keywords: list[str]) -> list[dict]:
     timeout = aiohttp.ClientTimeout(total=30)
 
     async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+        filter_by = await _build_location_filter(session, settings.job_location)
         for keyword in keywords:
-            console.log(f"[cyan]Simplify:[/cyan] Scraping '{keyword}'")
+            console.log(
+                f"[cyan]Simplify:[/cyan] Scraping '{keyword}' in "
+                f"'{settings.job_location}'"
+            )
             total_hits = 0
 
-            for page in range(1, SIMPLIFY_MAX_PAGES + 1):
-                payload = _build_search_payload(keyword, page)
+            for page in range(1, settings.simplify_max_pages + 1):
+                payload = _build_search_payload(keyword, page, filter_by)
                 try:
                     async with session.post(
                         SIMPLIFY_SEARCH_URL, params=params, json=payload
@@ -234,12 +414,14 @@ async def enrich_job_descriptions(
     jobs: list[dict], session: aiohttp.ClientSession
 ) -> list[dict]:
     """Enrich a list of jobs by fetching detail JSON from Simplify API."""
+    if not jobs:
+        return []
+
     enriched: list[dict] = []
     total = len(jobs)
-    processed = 0
-    console.log(f"  Enriching 0/{total}")
 
     sem = asyncio.Semaphore(5)
+    log = console.log
 
     async def _enrich_job(job: dict) -> dict:
         posting_id = job.get("posting_id")
@@ -251,13 +433,13 @@ async def enrich_job_descriptions(
             try:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        console.log(
+                        log(
                             f"  [yellow]Detail HTTP {resp.status} for {posting_id}[/yellow]"
                         )
                         return job
                     data = await resp.json()
             except Exception as e:
-                console.log(
+                log(
                     f"  [yellow]Enrich failed for {job.get('title','')} @ {job.get('company','')}: {e}[/yellow]"
                 )
                 return job
@@ -273,11 +455,12 @@ async def enrich_job_descriptions(
         return job
 
     tasks = [_enrich_job(job) for job in jobs]
-    for coro in asyncio.as_completed(tasks):
-        job = await coro
-        enriched.append(job)
-        processed += 1
-        if processed % 10 == 0 or processed == total:
-            console.log(f"  Enriched {processed}/{total}")
+    with progress_bar() as progress:
+        log = progress.console.log
+        task = progress.add_task("Enriching Simplify jobs...", total=total)
+        for coro in asyncio.as_completed(tasks):
+            job = await coro
+            enriched.append(job)
+            progress.advance(task)
 
     return enriched

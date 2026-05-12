@@ -7,17 +7,16 @@ import time
 from pathlib import Path
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
-from rich.console import Console
 
+from console_utils import console
+from config.settings import get_settings
 from utils import (
     DEFAULT_LINKEDIN_STORAGE_STATE,
     LINKEDIN_USER_AGENT,
     get_linkedin_storage_state_path,
     is_linkedin_login_page,
 )
-from config.settings import get_settings
 
-console = Console()
 settings = get_settings()
 
 LINKEDIN_LOGIN_URL = "https://www.linkedin.com/login"

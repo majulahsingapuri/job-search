@@ -5,12 +5,11 @@ inspect_db.py  —  Browse the jobs database from the terminal.
 import argparse
 import json
 from db.database import get_connection, init_db
-from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
-console = Console()
+from console_utils import console
 
 
 def _score_style(score):

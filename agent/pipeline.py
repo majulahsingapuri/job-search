@@ -6,15 +6,13 @@ Called by main.py after scraping completes.
 
 import asyncio
 import json
-from rich.console import Console
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
+from console_utils import console, progress_bar
 from db.database import get_unscored_jobs, update_job_agent_results
 from agent.routing_agent import score_job_async
 from config.settings import get_settings
 
-console = Console()
 settings = get_settings()
 
 # Keep batches small — each call hits the Claude API
@@ -57,14 +55,7 @@ async def run_routing_pipeline() -> dict:
     processed = scored = errors = 0
     results_log: list[tuple[dict, dict]] = []
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        console=console,
-        transient=True,
-    ) as progress:
+    with progress_bar() as progress:
         task = progress.add_task("Scoring...", total=len(jobs))
 
         for i in range(0, len(jobs), BATCH_SIZE):

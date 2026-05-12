@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     greenhouse_storage_state: str = ".auth/greenhouse_state.json"
     greenhouse_email: str = ""
 
+    # Simplify
+    simplify_max_pages: int = 3
+    simplify_per_page: int = 50
+
     # Outreach
     outreach_targets: list[str] | str = Field(
         default_factory=lambda: DEFAULT_OUTREACH_TARGETS.copy()
@@ -171,6 +175,8 @@ class Settings(BaseSettings):
         "smtp_port",
         "linkedin_enrich_concurrency",
         "greenhouse_max_pages",
+        "simplify_max_pages",
+        "simplify_per_page",
         mode="after",
     )
     def _ensure_positive(cls, value: int) -> int:

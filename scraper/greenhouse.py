@@ -12,8 +12,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import aiohttp
 from bs4 import BeautifulSoup
-from rich.console import Console
 
+from console_utils import console, progress_bar
 from config.settings import get_settings
 from db.database import filter_new_jobs
 from scraper.greenhouse_auth import (
@@ -21,7 +21,6 @@ from scraper.greenhouse_auth import (
     greenhouse_inertia_version_from_state,
 )
 
-console = Console()
 settings = get_settings()
 
 GREENHOUSE_SEARCH_URL = "https://my.greenhouse.io/jobs"
@@ -391,12 +390,14 @@ async def enrich_greenhouse_descriptions(
     jobs: list[dict], session: aiohttp.ClientSession
 ) -> list[dict]:
     """Enrich jobs by fetching their public Greenhouse job-board pages."""
+    if not jobs:
+        return []
+
     enriched: list[dict] = []
     total = len(jobs)
-    processed = 0
-    console.log(f"  Enriching 0/{total}")
 
     sem = asyncio.Semaphore(GREENHOUSE_ENRICH_CONCURRENCY)
+    log = console.log
 
     async def _enrich_job(job: dict) -> dict:
         url = (job.get("url") or "").strip()
@@ -414,13 +415,13 @@ async def enrich_greenhouse_descriptions(
                         detail_url, headers=_build_detail_headers()
                     ) as resp:
                         if resp.status != 200:
-                            console.log(
+                            log(
                                 f"  [yellow]Detail HTTP {resp.status} for {detail_url}[/yellow]"
                             )
                             continue
                         raw_html = await resp.text()
                 except Exception as e:
-                    console.log(
+                    log(
                         f"  [yellow]Enrich failed for {job.get('title','')} @ "
                         f"{job.get('company','')}: {e}[/yellow]"
                     )
@@ -439,12 +440,13 @@ async def enrich_greenhouse_descriptions(
         return job
 
     tasks = [_enrich_job(job) for job in jobs]
-    for coro in asyncio.as_completed(tasks):
-        job = await coro
-        enriched.append(job)
-        processed += 1
-        if processed % 10 == 0 or processed == total:
-            console.log(f"  Enriched {processed}/{total}")
+    with progress_bar() as progress:
+        log = progress.console.log
+        task = progress.add_task("Enriching Greenhouse jobs...", total=total)
+        for coro in asyncio.as_completed(tasks):
+            job = await coro
+            enriched.append(job)
+            progress.advance(task)
 
     return enriched
 

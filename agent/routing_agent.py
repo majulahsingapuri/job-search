@@ -16,11 +16,10 @@ import asyncio
 import hashlib
 from pydantic_ai import Agent
 from pydantic import BaseModel, Field
-from rich.console import Console
+from console_utils import console
 from config.resumes import RESUME_VARIANTS
 from config.settings import get_settings
 
-console = Console()
 settings = get_settings()
 LLM_PROVIDER = settings.llm_provider
 LLM_MODEL = settings.llm_model

@@ -8,18 +8,17 @@ import asyncio
 import random
 
 from playwright.async_api import async_playwright, TimeoutError as PWTimeout
-from rich.console import Console
 
+from console_utils import console, progress_bar
+from config.settings import get_settings
 from scraper.linkedin_auth import (
     _create_context,
     _goto_with_login_fallback,
     login_linkedin,
 )
 from utils import DEFAULT_LINKEDIN_STORAGE_STATE, get_linkedin_storage_state_path
-from config.settings import get_settings
 from db.database import filter_new_jobs
 
-console = Console()
 settings = get_settings()
 
 LINKEDIN_BASE = "https://www.linkedin.com/jobs/search"
@@ -374,24 +373,18 @@ async def enrich_job_descriptions(
     jobs: list[dict], context, concurrency: int = 5
 ) -> list[dict]:
     """Enrich a list of jobs reusing an existing browser context."""
+    if not jobs:
+        return []
+
     total = len(jobs)
-    processed = 0
-    lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(concurrency)
 
     base_delay_ms = settings.linkedin_enrich_delay_ms
     jitter_delay_ms = settings.linkedin_enrich_jitter_ms
-
-    console.log(f"  Enriching 0/{total}")
+    log = console.log
 
     async def _enrich_job(job: dict) -> dict:
-        nonlocal processed
-
         if not job.get("url"):
-            async with lock:
-                processed += 1
-                if processed % 10 == 0 or processed == total:
-                    console.log(f"  Enriched {processed}/{total}")
             return job
 
         async with semaphore:
@@ -416,7 +409,7 @@ async def enrich_job_descriptions(
                         raise
 
                 if response is not None and response.status >= 400:
-                    console.log(
+                    log(
                         f"  [yellow]Enrich failed for {job['title']} @ {job['company']}: HTTP {response.status}[/yellow]"
                     )
                     return job
@@ -436,17 +429,21 @@ async def enrich_job_descriptions(
                 if desc_el:
                     job["description"] = (await desc_el.inner_text()).strip()[:3000]
             except Exception as e:
-                console.log(
+                log(
                     f"  [yellow]Enrich failed for {job['title']} @ {job['company']}: {e}[/yellow]"
                 )
             finally:
                 await page.close()
 
-        async with lock:
-            processed += 1
-            if processed % 10 == 0 or processed == total:
-                console.log(f"  Enriched {processed}/{total}")
         return job
 
-    enriched = await asyncio.gather(*[_enrich_job(job) for job in jobs])
-    return list(enriched)
+    enriched: list[dict] = []
+    tasks = [_enrich_job(job) for job in jobs]
+    with progress_bar() as progress:
+        log = progress.console.log
+        task = progress.add_task("Enriching LinkedIn jobs...", total=total)
+        for coro in asyncio.as_completed(tasks):
+            job = await coro
+            enriched.append(job)
+            progress.advance(task)
+    return enriched
